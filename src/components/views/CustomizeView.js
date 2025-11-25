@@ -1,5 +1,6 @@
 import { html, css, LitElement } from '../../assets/lit-core-2.7.4.min.js';
 import { resizeLayout } from '../../utils/windowResize.js';
+import '../common/CustomDropdown.js';
 
 export class CustomizeView extends LitElement {
     static styles = css`
@@ -15,30 +16,32 @@ export class CustomizeView extends LitElement {
 
         :host {
             display: block;
-            padding: 12px;
+            padding: 8px;
             margin: 0 auto;
-            max-width: 700px;
+            max-width: 750px;
+            overflow: visible;
         }
 
         .settings-container {
             display: grid;
-            gap: 12px;
-            padding-bottom: 20px;
+            gap: 8px;
+            padding-bottom: 10px;
         }
 
         .settings-section {
             background: var(--card-background, rgba(255, 255, 255, 0.04));
             border: 1px solid var(--card-border, rgba(255, 255, 255, 0.1));
             border-radius: 6px;
-            padding: 16px;
-            backdrop-filter: blur(10px);
+            padding: 12px;
+            position: relative;
+            overflow: visible;
         }
 
         .section-title {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             font-size: 14px;
             font-weight: 600;
             color: var(--text-color);
@@ -56,14 +59,16 @@ export class CustomizeView extends LitElement {
 
         .form-grid {
             display: grid;
-            gap: 12px;
+            gap: 8px;
+            overflow: visible;
         }
 
         .form-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            gap: 8px;
             align-items: start;
+            overflow: visible;
         }
 
         @media (max-width: 600px) {
@@ -75,7 +80,9 @@ export class CustomizeView extends LitElement {
         .form-group {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
+            overflow: visible;
+            position: relative;
         }
 
         .form-group.full-width {
@@ -95,7 +102,7 @@ export class CustomizeView extends LitElement {
             font-size: 11px;
             color: var(--description-color, rgba(255, 255, 255, 0.5));
             line-height: 1.3;
-            margin-top: 2px;
+            margin-top: 1px;
         }
 
         .form-control {
@@ -122,15 +129,7 @@ export class CustomizeView extends LitElement {
             background: var(--input-hover-background, rgba(0, 0, 0, 0.35));
         }
 
-        select.form-control {
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-            background-position: right 8px center;
-            background-repeat: no-repeat;
-            background-size: 12px;
-            padding-right: 28px;
-        }
+        /* Custom dropdown styling removed - now using custom-dropdown component */
 
         textarea.form-control {
             resize: vertical;
@@ -168,7 +167,7 @@ export class CustomizeView extends LitElement {
         }
 
         .keybind-input {
-            cursor: pointer;
+            cursor: default;
             font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
             text-align: center;
             letter-spacing: 0.5px;
@@ -176,7 +175,7 @@ export class CustomizeView extends LitElement {
         }
 
         .keybind-input:focus {
-            cursor: text;
+            cursor: default;
             background: var(--input-focus-background, rgba(0, 122, 255, 0.1));
         }
 
@@ -193,7 +192,7 @@ export class CustomizeView extends LitElement {
             border-radius: 4px;
             font-size: 11px;
             font-weight: 500;
-            cursor: pointer;
+            cursor: default;
             transition: all 0.15s ease;
         }
 
@@ -276,8 +275,8 @@ export class CustomizeView extends LitElement {
             color: var(--note-color, rgba(255, 255, 255, 0.4));
             font-style: italic;
             text-align: center;
-            margin-top: 10px;
-            padding: 8px;
+            margin-top: 6px;
+            padding: 6px;
             background: var(--note-background, rgba(255, 255, 255, 0.02));
             border-radius: 4px;
             border: 1px solid var(--note-border, rgba(255, 255, 255, 0.08));
@@ -287,8 +286,8 @@ export class CustomizeView extends LitElement {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 10px;
-            padding: 8px;
+            margin-bottom: 6px;
+            padding: 6px;
             background: var(--checkbox-background, rgba(255, 255, 255, 0.02));
             border-radius: 4px;
             border: 1px solid var(--checkbox-border, rgba(255, 255, 255, 0.06));
@@ -298,14 +297,14 @@ export class CustomizeView extends LitElement {
             width: 14px;
             height: 14px;
             accent-color: var(--focus-border-color, #007aff);
-            cursor: pointer;
+            cursor: default;
         }
 
         .checkbox-label {
             font-weight: 500;
             font-size: 12px;
             color: var(--label-color, rgba(255, 255, 255, 0.9));
-            cursor: pointer;
+            cursor: default;
             user-select: none;
         }
 
@@ -356,7 +355,7 @@ export class CustomizeView extends LitElement {
             background: var(--input-background, rgba(0, 0, 0, 0.3));
             outline: none;
             border: 1px solid var(--input-border, rgba(255, 255, 255, 0.15));
-            cursor: pointer;
+            cursor: default;
         }
 
         .slider-input::-webkit-slider-thumb {
@@ -366,7 +365,7 @@ export class CustomizeView extends LitElement {
             height: 16px;
             border-radius: 50%;
             background: var(--focus-border-color, #007aff);
-            cursor: pointer;
+            cursor: default;
             border: 2px solid var(--text-color, white);
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
@@ -376,7 +375,7 @@ export class CustomizeView extends LitElement {
             height: 16px;
             border-radius: 50%;
             background: var(--focus-border-color, #007aff);
-            cursor: pointer;
+            cursor: default;
             border: 2px solid var(--text-color, white);
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
@@ -396,6 +395,35 @@ export class CustomizeView extends LitElement {
             font-size: 10px;
             color: var(--description-color, rgba(255, 255, 255, 0.5));
         }
+
+        .mode-display-box {
+            background: var(--input-background, rgba(0, 0, 0, 0.3));
+            border: 1px solid var(--input-border, rgba(255, 255, 255, 0.15));
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-color);
+            cursor: default;
+        }
+
+        .warning-box {
+            background: var(--warning-background, rgba(251, 191, 36, 0.08));
+            border: 1px solid var(--warning-border, rgba(251, 191, 36, 0.2));
+            border-radius: 4px;
+            padding: 12px;
+            font-size: 11px;
+            color: var(--warning-color, #fbbf24);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            line-height: 1.4;
+        }
+
+        .warning-icon {
+            flex-shrink: 0;
+            font-size: 12px;
+            margin-top: 1px;
+        }
     `;
 
     static properties = {
@@ -406,6 +434,8 @@ export class CustomizeView extends LitElement {
         layoutMode: { type: String },
         keybinds: { type: Object },
         googleSearchEnabled: { type: Boolean },
+        vadEnabled: { type: Boolean },
+        vadMode: { type: String },
         backgroundTransparency: { type: Number },
         fontSize: { type: Number },
         onProfileChange: { type: Function },
@@ -415,15 +445,17 @@ export class CustomizeView extends LitElement {
         onLayoutModeChange: { type: Function },
         advancedMode: { type: Boolean },
         onAdvancedModeChange: { type: Function },
+        selectedMode: { type: String },
+        selectedModel: { type: String },
     };
 
     constructor() {
         super();
-        this.selectedProfile = 'interview';
+        this.selectedProfile = 'exam';
         this.selectedLanguage = 'en-US';
         this.selectedScreenshotInterval = '5';
-        this.selectedImageQuality = 'medium';
-        this.layoutMode = 'normal';
+        this.selectedImageQuality = 'high';
+        this.layoutMode = 'compact';
         this.keybinds = this.getDefaultKeybinds();
         this.onProfileChange = () => {};
         this.onLanguageChange = () => {};
@@ -438,17 +470,28 @@ export class CustomizeView extends LitElement {
         // Advanced mode default
         this.advancedMode = false;
 
+        // VAD (Voice Activity Detection) default
+        this.vadEnabled = true;
+        this.vadMode = 'automatic'; // 'automatic' or 'manual'
+
         // Background transparency default
-        this.backgroundTransparency = 0.8;
+        this.backgroundTransparency = 0.61;
 
         // Font size default (in pixels)
-        this.fontSize = 20;
+        this.fontSize = 13;
+
+        // Mode and model selection defaults
+        this.selectedMode = 'interview';
+        this.selectedModel = 'gemini-2.5-pro';
 
         this.loadKeybinds();
         this.loadGoogleSearchSettings();
         this.loadAdvancedModeSettings();
+        this.loadVADSettings();
         this.loadBackgroundTransparency();
         this.loadFontSize();
+        this.loadModeSettings();
+        this.initializeDefaultInstructions();
     }
 
     connectedCallback() {
@@ -541,8 +584,34 @@ export class CustomizeView extends LitElement {
     }
 
     handleProfileSelect(e) {
+        // Save current textarea content to the previous profile before switching
+        const currentTextareaValue = this.shadowRoot?.querySelector('textarea')?.value || localStorage.getItem('customPrompt') || '';
+        if (this.selectedProfile && currentTextareaValue !== undefined) {
+            this.setCustomPromptForProfile(this.selectedProfile, currentTextareaValue);
+        }
+
+        // Switch to new profile
         this.selectedProfile = e.target.value;
         localStorage.setItem('selectedProfile', this.selectedProfile);
+
+        // Load instructions for the new profile
+        const newProfileInstructions = this.getCustomPromptForProfile(this.selectedProfile);
+        localStorage.setItem('customPrompt', newProfileInstructions);
+
+        // Auto-set mode based on profile
+        if (this.selectedProfile === 'exam') {
+            // Exam Assistant -> Coding/OA mode
+            this.selectedMode = 'coding';
+            localStorage.setItem('selectedMode', 'coding');
+        } else {
+            // All other profiles -> Interview mode
+            this.selectedMode = 'interview';
+            localStorage.setItem('selectedMode', 'interview');
+        }
+
+        // Update the textarea value
+        this.requestUpdate();
+
         this.onProfileChange(this.selectedProfile);
     }
 
@@ -570,7 +639,37 @@ export class CustomizeView extends LitElement {
     }
 
     handleCustomPromptInput(e) {
-        localStorage.setItem('customPrompt', e.target.value);
+        // Store custom prompt for the current profile
+        this.setCustomPromptForProfile(this.selectedProfile, e.target.value);
+    }
+
+    getCustomPromptForProfile(profile) {
+        const key = `customPrompt_${profile}`;
+        const saved = localStorage.getItem(key);
+        if (saved !== null) {
+            return saved;
+        }
+        // If no custom prompt exists for this profile, return default instructions
+        return this.getDefaultInstructions(profile);
+    }
+
+    setCustomPromptForProfile(profile, value) {
+        const key = `customPrompt_${profile}`;
+        localStorage.setItem(key, value);
+        // Also update the legacy customPrompt for compatibility
+        localStorage.setItem('customPrompt', value);
+    }
+
+    getDefaultInstructions(profile) {
+        const defaultInstructions = {
+            exam: `Help me with MCQ, coding and aptitude questions. Provide clear answers.`,
+            interview: `Help me with technical and HR interview questions. Give natural, professional responses.`,
+            sales: `Help me with sales calls and client conversations. Provide persuasive, relationship-building responses.`,
+            meeting: `Help me in business meetings and discussions. Give professional, collaborative input.`,
+            presentation: `Help me with presentations and public speaking. Provide engaging, confident responses.`,
+            negotiation: `Help me with business negotiations and deals. Give strategic, win-win focused advice.`
+        };
+        return defaultInstructions[profile] || '';
     }
 
     getDefaultKeybinds() {
@@ -582,11 +681,14 @@ export class CustomizeView extends LitElement {
             moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
             toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
             toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
+            toggleMicrophone: isMac ? 'Cmd+Shift+M' : 'Ctrl+Shift+M',
             nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
             previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
             nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+            copyCodeBlocks: isMac ? 'Cmd+Shift+C' : 'Ctrl+Shift+C',
+            emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
         };
     }
 
@@ -660,6 +762,11 @@ export class CustomizeView extends LitElement {
                 description: 'Enable/disable click-through functionality',
             },
             {
+                key: 'toggleMicrophone',
+                name: 'Toggle Microphone',
+                description: 'Toggle microphone ON/OFF (Manual VAD mode only)',
+            },
+            {
                 key: 'nextStep',
                 name: 'Ask Next Step',
                 description: 'Take screenshot and ask AI for the next step suggestion',
@@ -683,6 +790,16 @@ export class CustomizeView extends LitElement {
                 key: 'scrollDown',
                 name: 'Scroll Response Down',
                 description: 'Scroll the AI response content down',
+            },
+            {
+                key: 'copyCodeBlocks',
+                name: 'Copy AI Response',
+                description: 'Copy the current AI response to clipboard',
+            },
+            {
+                key: 'emergencyErase',
+                name: 'Emergency Erase',
+                description: 'Immediately hide window, clear data, and quit application',
             },
         ];
     }
@@ -800,6 +917,52 @@ export class CustomizeView extends LitElement {
         }
     }
 
+    loadVADSettings() {
+        const vadEnabled = localStorage.getItem('vadEnabled');
+        if (vadEnabled !== null) {
+            this.vadEnabled = vadEnabled === 'true';
+        }
+
+        const vadMode = localStorage.getItem('vadMode');
+        if (vadMode !== null) {
+            this.vadMode = vadMode;
+        }
+    }
+
+    async handleVADChange(e) {
+        this.vadEnabled = e.target.checked;
+        localStorage.setItem('vadEnabled', this.vadEnabled.toString());
+
+        // Notify main process if available
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('update-vad-setting', this.vadEnabled);
+            } catch (error) {
+                console.error('Failed to notify main process of VAD setting change:', error);
+            }
+        }
+
+        this.requestUpdate();
+    }
+
+    async handleVADModeChange(e) {
+        this.vadMode = e.detail.value;
+        localStorage.setItem('vadMode', this.vadMode);
+
+        // Notify main process if available
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                await ipcRenderer.invoke('update-vad-mode', this.vadMode);
+            } catch (error) {
+                console.error('Failed to notify main process of VAD mode change:', error);
+            }
+        }
+
+        this.requestUpdate();
+    }
+
     async handleAdvancedModeChange(e) {
         this.advancedMode = e.target.checked;
         localStorage.setItem('advancedMode', this.advancedMode.toString());
@@ -856,6 +1019,56 @@ export class CustomizeView extends LitElement {
         root.style.setProperty('--response-font-size', `${this.fontSize}px`);
     }
 
+    initializeDefaultInstructions() {
+        // Load saved profile or use default
+        const savedProfile = localStorage.getItem('selectedProfile');
+        if (savedProfile) {
+            this.selectedProfile = savedProfile;
+        }
+
+        // Load instructions for the current profile
+        const profileInstructions = this.getCustomPromptForProfile(this.selectedProfile);
+        localStorage.setItem('customPrompt', profileInstructions);
+    }
+
+    // Mode and model selection methods
+    loadModeSettings() {
+        const selectedMode = localStorage.getItem('selectedMode');
+        const selectedModel = localStorage.getItem('selectedModel');
+
+        this.selectedMode = selectedMode || 'interview';
+        this.selectedModel = selectedModel || 'gemini-2.5-pro';
+    }
+
+    async handleModeChange(e) {
+        this.selectedMode = e.target.value;
+        localStorage.setItem('selectedMode', this.selectedMode);
+
+        // In interview mode, always use live API
+        // In coding mode, user can choose between flash and pro
+        if (this.selectedMode === 'interview') {
+            this.selectedModel = 'gemini-2.5-flash';
+        } else {
+            // Keep current model selection for coding mode
+            if (this.selectedModel === 'gemini-2.5-flash' || this.selectedModel === 'gemini-2.5-pro') {
+                // Keep the selection
+            } else {
+                // Default to pro for coding mode
+                this.selectedModel = 'gemini-2.5-pro';
+            }
+        }
+        localStorage.setItem('selectedModel', this.selectedModel);
+
+        this.requestUpdate();
+    }
+
+    async handleModelChange(e) {
+        this.selectedModel = e.target.value;
+        localStorage.setItem('selectedModel', this.selectedModel);
+
+        this.requestUpdate();
+    }
+
     render() {
         const profiles = this.getProfiles();
         const languages = this.getLanguages();
@@ -878,15 +1091,11 @@ export class CustomizeView extends LitElement {
                                     Profile Type
                                     <span class="current-selection">${currentProfile?.name || 'Unknown'}</span>
                                 </label>
-                                <select class="form-control" .value=${this.selectedProfile} @change=${this.handleProfileSelect}>
-                                    ${profiles.map(
-                                        profile => html`
-                                            <option value=${profile.value} ?selected=${this.selectedProfile === profile.value}>
-                                                ${profile.name}
-                                            </option>
-                                        `
-                                    )}
-                                </select>
+                                <custom-dropdown
+                                    .value=${this.selectedProfile}
+                                    .options=${profiles.map(p => ({ value: p.value, label: p.name }))}
+                                    @change=${e => this.handleProfileSelect({ target: { value: e.detail.value } })}
+                                ></custom-dropdown>
                             </div>
                         </div>
 
@@ -909,23 +1118,113 @@ export class CustomizeView extends LitElement {
             </div>
         </div>
 
-                <!-- Audio & Microphone Section -->
+                <!-- Mode Selection Section (Coding vs Interview) -->
                 <div class="settings-section">
                     <div class="section-title">
-                        <span>Audio & Microphone</span>
+                        <span>Application Mode</span>
+                    </div>
+
+                    <div class="form-grid">
+                        ${this.selectedProfile === 'exam' ? html`
+                            <!-- Exam Assistant mode: Only Coding/OA mode available -->
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Mode (Fixed for Exam Assistant)</label>
+                                    <div class="mode-display-box">
+                                        💻 Coding/OA Mode (Screenshot-based)
+                                    </div>
+                                    <div class="form-description">
+                                        Exam Assistant profile uses Gemini API 2.5 Flash or 2.5 Pro for better problem-solving responses.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Model Selection</label>
+                                    <custom-dropdown
+                                        .value=${this.selectedModel}
+                                        .options=${[
+                                            { value: 'gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash (Faster, Balanced)' },
+                                            { value: 'gemini-2.5-pro', label: '🚀 Gemini 2.5 Pro (Slower, More Accurate)' }
+                                        ]}
+                                        @change=${e => this.handleModelChange({ target: { value: e.detail.value } })}
+                                    ></custom-dropdown>
+                                    <div class="form-description">
+                                        ${this.selectedModel === 'gemini-2.5-flash'
+                                            ? 'Gemini 2.5 Flash: Faster responses, good for time-sensitive coding assessments.'
+                                            : 'Gemini 2.5 Pro: More accurate and detailed responses, better for complex problems.'}
+                                    </div>
+                                </div>
+                            </div>
+                        ` : html`
+                            <!-- Other profiles: Only Interview mode available -->
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Mode (Fixed for ${this.getProfileNames()[this.selectedProfile]})</label>
+                                    <div class="mode-display-box">
+                                        🎤 Interview Mode (Real-time Audio/Video)
+                                    </div>
+                                    <div class="form-description">
+                                        ${this.getProfileNames()[this.selectedProfile]} profile uses Interview mode with Gemini 2.5 Flash for real-time audio processing and live interactions.
+                                    </div>
+                                </div>
+                            </div>
+                        `}
+                    </div>
+                </div>
+
+                <!-- Audio Section -->
+                <div class="settings-section">
+                    <div class="section-title">
+                        <span>Audio</span>
                     </div>
                     <div class="form-grid">
-                        <div class="form-group">
-                            <label class="form-label">Audio Mode</label>
-                            <select class="form-control" .value=${localStorage.getItem('audioMode') || 'speaker_only'} @change=${e => localStorage.setItem('audioMode', e.target.value)}>
-                                <option value="speaker_only">Speaker Only (Interviewer)</option>
-                                <option value="mic_only">Microphone Only (Me)</option>
-                                <option value="both">Both Speaker & Microphone</option>
-                            </select>
+
+                        <div class="form-group full-width">
+                            <div class="checkbox-group">
+                                <input
+                                    type="checkbox"
+                                    class="checkbox-input"
+                                    id="vad-enabled"
+                                    .checked=${this.vadEnabled}
+                                    @change=${this.handleVADChange}
+                                />
+                                <label for="vad-enabled" class="checkbox-label">Enable Voice Activity Detection (VAD)</label>
+                            </div>
                             <div class="form-description">
-                                Choose which audio sources to capture for the AI.
+                                Intelligently detect when you're speaking and only capture audio during speech.
+                                Improves privacy by avoiding recording of silence and background noise.
+                                <br /><strong>Benefits:</strong> Better privacy, reduced processing, natural conversation flow
                             </div>
                         </div>
+
+                        ${this.selectedProfile === 'interview' && this.vadEnabled ? html`
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">
+                                        VAD Control Mode
+                                        <span class="current-selection">${this.vadMode === 'automatic' ? 'Smart Detection' : 'Manual Control'}</span>
+                                    </label>
+                                    <custom-dropdown
+                                        .value=${this.vadMode}
+                                        .options=${[
+                                            { value: 'automatic', label: 'Smart Detection (Auto)' },
+                                            { value: 'manual', label: 'Manual Control (Push-to-Talk)' }
+                                        ]}
+                                        @change=${this.handleVADModeChange}
+                                    ></custom-dropdown>
+                                </div>
+                            </div>
+                            <div class="form-group full-width">
+                                <div class="form-description">
+                                    ${this.vadMode === 'automatic'
+                                        ? html`<strong>Smart Detection:</strong> VAD automatically detects speech and silence. Best for natural conversations where the interviewer speaks continuously.`
+                                        : html`<strong>Manual Control:</strong> Click the microphone button to start listening. VAD captures the entire question (including pauses) until you click again to generate the response. Perfect for interviewers who pause frequently mid-sentence.`
+                                    }
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -935,19 +1234,26 @@ export class CustomizeView extends LitElement {
                         <span>Stealth Profile</span>
                     </div>
                     <div class="form-grid">
-                        <div class="form-group">
-                            <label class="form-label">Profile</label>
-                            <select class="form-control" .value=${localStorage.getItem('stealthProfile') || 'balanced'} @change=${e => {
-                                localStorage.setItem('stealthProfile', e.target.value);
-                                // We need to notify the main process to restart for some settings to apply
-                                alert('Restart the application for stealth changes to take full effect.');
-                            }}>
-                                <option value="visible">Visible</option>
-                                <option value="balanced">Balanced</option>
-                                <option value="ultra">Ultra-Stealth</option>
-                            </select>
-                            <div class="form-description">
-                                Adjusts visibility and detection resistance. A restart is required for changes to apply.
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Profile</label>
+                                <custom-dropdown
+                                    .value=${localStorage.getItem('stealthProfile') || 'ultra'}
+                                    .options=${[
+                                        { value: 'visible', label: 'Visible' },
+                                        { value: 'balanced', label: 'Balanced' },
+                                        { value: 'ultra', label: 'Ultra-Stealth' }
+                                    ]}
+                                    @change=${e => {
+                                        localStorage.setItem('stealthProfile', e.detail.value);
+                                        // We need to notify the main process to restart for some settings to apply
+                                        alert('Restart the application for stealth changes to take full effect.');
+                                        this.requestUpdate();
+                                    }}
+                                ></custom-dropdown>
+                                <div class="form-description">
+                                    Adjusts visibility and detection resistance. A restart is required for changes to apply.
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -967,15 +1273,11 @@ export class CustomizeView extends LitElement {
                                     Speech Language
                                     <span class="current-selection">${currentLanguage?.name || 'Unknown'}</span>
                                 </label>
-                                <select class="form-control" .value=${this.selectedLanguage} @change=${this.handleLanguageSelect}>
-                                    ${languages.map(
-                                        language => html`
-                                            <option value=${language.value} ?selected=${this.selectedLanguage === language.value}>
-                                                ${language.name}
-                                            </option>
-                                        `
-                                    )}
-                                </select>
+                                <custom-dropdown
+                                    .value=${this.selectedLanguage}
+                                    .options=${languages.map(l => ({ value: l.value, label: l.name }))}
+                                    @change=${e => this.handleLanguageSelect({ target: { value: e.detail.value } })}
+                                ></custom-dropdown>
                                 <div class="form-description">Language for speech recognition and AI responses</div>
                             </div>
                         </div>
@@ -989,26 +1291,6 @@ export class CustomizeView extends LitElement {
                     </div>
 
                     <div class="form-grid">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">
-                                    Layout Mode
-                                    <span class="current-selection">${this.layoutMode === 'compact' ? 'Compact' : 'Normal'}</span>
-                                </label>
-                                <select class="form-control" .value=${this.layoutMode} @change=${this.handleLayoutModeSelect}>
-                                    <option value="normal" ?selected=${this.layoutMode === 'normal'}>Normal</option>
-                                    <option value="compact" ?selected=${this.layoutMode === 'compact'}>Compact</option>
-                                </select>
-                                <div class="form-description">
-                                    ${
-                                        this.layoutMode === 'compact'
-                                            ? 'Smaller window size with reduced padding and font sizes for minimal screen footprint'
-                                            : 'Standard layout with comfortable spacing and font sizes'
-                                    }
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="form-group full-width">
                             <div class="slider-container">
                                 <div class="slider-header">
@@ -1070,30 +1352,38 @@ export class CustomizeView extends LitElement {
                     </div>
 
                     <div class="form-grid">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">
-                                    Capture Interval
-                                    <span class="current-selection"
-                                        >${this.selectedScreenshotInterval === 'manual' ? 'Manual' : this.selectedScreenshotInterval + 's'}</span
-                                    >
-                                </label>
-                                <select class="form-control" .value=${this.selectedScreenshotInterval} @change=${this.handleScreenshotIntervalSelect}>
-                                    <option value="manual" ?selected=${this.selectedScreenshotInterval === 'manual'}>Manual (On demand)</option>
-                                    <option value="1" ?selected=${this.selectedScreenshotInterval === '1'}>Every 1 second</option>
-                                    <option value="2" ?selected=${this.selectedScreenshotInterval === '2'}>Every 2 seconds</option>
-                                    <option value="5" ?selected=${this.selectedScreenshotInterval === '5'}>Every 5 seconds</option>
-                                    <option value="10" ?selected=${this.selectedScreenshotInterval === '10'}>Every 10 seconds</option>
-                                </select>
-                                <div class="form-description">
-                                    ${
-                                        this.selectedScreenshotInterval === 'manual'
-                                            ? 'Screenshots will only be taken when you use the "Ask Next Step" shortcut'
-                                            : 'Automatic screenshots will be taken at the specified interval'
-                                    }
+                        ${this.selectedProfile !== 'exam' ? html`
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">
+                                        Capture Interval
+                                        <span class="current-selection"
+                                            >${this.selectedScreenshotInterval === 'manual' ? 'Manual' : this.selectedScreenshotInterval + 's'}</span
+                                        >
+                                    </label>
+                                    <custom-dropdown
+                                        .value=${this.selectedScreenshotInterval}
+                                        .options=${[
+                                            { value: 'manual', label: 'Manual (On demand)' },
+                                            { value: '1', label: 'Every 1 second' },
+                                            { value: '2', label: 'Every 2 seconds' },
+                                            { value: '5', label: 'Every 5 seconds' },
+                                            { value: '10', label: 'Every 10 seconds' }
+                                        ]}
+                                        @change=${e => this.handleScreenshotIntervalSelect({ target: { value: e.detail.value } })}
+                                    ></custom-dropdown>
+                                    <div class="form-description">
+                                        ${
+                                            this.selectedScreenshotInterval === 'manual'
+                                                ? 'Screenshots will only be taken when you use the "Ask Next Step" shortcut'
+                                                : 'Automatic screenshots will be taken at the specified interval'
+                                        }
+                                    </div>
                                 </div>
                             </div>
+                        ` : ''}
 
+                        <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">
                                     Image Quality
@@ -1101,11 +1391,15 @@ export class CustomizeView extends LitElement {
                                         >${this.selectedImageQuality.charAt(0).toUpperCase() + this.selectedImageQuality.slice(1)}</span
                                     >
                                 </label>
-                                <select class="form-control" .value=${this.selectedImageQuality} @change=${this.handleImageQualitySelect}>
-                                    <option value="high" ?selected=${this.selectedImageQuality === 'high'}>High Quality</option>
-                                    <option value="medium" ?selected=${this.selectedImageQuality === 'medium'}>Medium Quality</option>
-                                    <option value="low" ?selected=${this.selectedImageQuality === 'low'}>Low Quality</option>
-                                </select>
+                                <custom-dropdown
+                                    .value=${this.selectedImageQuality}
+                                    .options=${[
+                                        { value: 'high', label: 'High Quality' },
+                                        { value: 'medium', label: 'Medium Quality' },
+                                        { value: 'low', label: 'Low Quality' }
+                                    ]}
+                                    @change=${e => this.handleImageQualitySelect({ target: { value: e.detail.value } })}
+                                ></custom-dropdown>
                                 <div class="form-description">
                                     ${
                                         this.selectedImageQuality === 'high'

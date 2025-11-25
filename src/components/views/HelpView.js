@@ -53,7 +53,7 @@ export class HelpView extends LitElement {
             font-size: 12px;
             line-height: 1.4;
             user-select: text;
-            cursor: text;
+            cursor: default;
         }
 
         .description strong {
@@ -69,7 +69,7 @@ export class HelpView extends LitElement {
         .link {
             color: var(--link-color, #007aff);
             text-decoration: none;
-            cursor: pointer;
+            cursor: default;
             transition: color 0.15s ease;
             user-select: text;
         }
@@ -91,7 +91,7 @@ export class HelpView extends LitElement {
             margin: 0 1px;
             white-space: nowrap;
             user-select: text;
-            cursor: text;
+            cursor: default;
         }
 
         .keyboard-section {
@@ -127,7 +127,7 @@ export class HelpView extends LitElement {
         .shortcut-description {
             color: var(--description-color, rgba(255, 255, 255, 0.7));
             user-select: text;
-            cursor: text;
+            cursor: default;
         }
 
         .shortcut-keys {
@@ -155,7 +155,7 @@ export class HelpView extends LitElement {
             color: var(--text-color);
             margin-bottom: 3px;
             user-select: text;
-            cursor: text;
+            cursor: default;
         }
 
         .profile-description {
@@ -163,7 +163,7 @@ export class HelpView extends LitElement {
             color: var(--description-color, rgba(255, 255, 255, 0.6));
             line-height: 1.3;
             user-select: text;
-            cursor: text;
+            cursor: default;
         }
 
         .community-links {
@@ -185,7 +185,7 @@ export class HelpView extends LitElement {
             font-size: 11px;
             font-weight: 500;
             transition: all 0.15s ease;
-            cursor: pointer;
+            cursor: default;
         }
 
         .community-link:hover {
@@ -205,7 +205,7 @@ export class HelpView extends LitElement {
             font-size: 11px;
             line-height: 1.3;
             user-select: text;
-            cursor: text;
+            cursor: default;
         }
 
         .usage-step::before {
@@ -258,11 +258,13 @@ export class HelpView extends LitElement {
             moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
             toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
             toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
+            toggleMicrophone: isMac ? 'Cmd+Shift+M' : 'Ctrl+Shift+M',
             nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
             previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
             nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
             scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
             scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+            copyCodeBlocks: isMac ? 'Cmd+Shift+C' : 'Ctrl+Shift+C',
         };
     }
 
@@ -352,6 +354,14 @@ export class HelpView extends LitElement {
                                 <span class="shortcut-description">Take screenshot and ask for next step</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.nextStep)}</div>
                             </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">Toggle microphone (Manual VAD mode only)</span>
+                                <div class="shortcut-keys">${this.formatKeybind(this.keybinds.toggleMicrophone)}</div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">Clear session and restart</span>
+                                <div class="shortcut-keys">${this.formatKeybind(isMacOS ? 'Cmd+Alt+R' : 'Ctrl+Alt+R')}</div>
+                            </div>
                         </div>
 
                         <div class="keyboard-group">
@@ -371,6 +381,10 @@ export class HelpView extends LitElement {
                             <div class="shortcut-item">
                                 <span class="shortcut-description">Scroll response down</span>
                                 <div class="shortcut-keys">${this.formatKeybind(this.keybinds.scrollDown)}</div>
+                            </div>
+                            <div class="shortcut-item">
+                                <span class="shortcut-description">Copy AI response</span>
+                                <div class="shortcut-keys">${this.formatKeybind(this.keybinds.copyCodeBlocks)}</div>
                             </div>
                         </div>
 
@@ -448,9 +462,14 @@ export class HelpView extends LitElement {
 
                 <div class="option-group">
                     <div class="option-label">
-                        <span>Audio Input</span>
+                        <span>Audio Input & VAD Modes</span>
                     </div>
-                    <div class="description">The AI listens to conversations and provides contextual assistance based on what it hears.</div>
+                    <div class="description">
+                        The AI listens to conversations and provides contextual assistance based on what it hears.<br /><br />
+                        <strong>Two VAD (Voice Activity Detection) Modes:</strong><br />
+                        • <strong>Automatic Mode:</strong> AI continuously listens and responds automatically when speech is detected<br />
+                        • <strong>Manual Mode:</strong> You control when the microphone is active. Use ${this.formatKeybind(this.keybinds.toggleMicrophone)} to toggle the mic ON/OFF during interview sessions. When toggled OFF, the AI generates a response based on the complete recorded question.<br /><br />
+                    </div>
                 </div>
             </div>
         `;

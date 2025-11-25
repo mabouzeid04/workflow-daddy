@@ -3,12 +3,19 @@ const { BrowserWindow, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const { saveDebugAudio } = require('../audioUtils');
 const { getSystemPrompt } = require('./prompts');
+const { VADProcessor } = require('./vad');
 
 // Conversation tracking variables
 let currentSessionId = null;
 let currentTranscription = '';
 let conversationHistory = [];
 let isInitializingSession = false;
+let isSessionReady = false; // Track if Live API setup is complete
+
+// Auto-reset tracking to prevent context buildup
+let responseCount = 0;
+const MAX_RESPONSES_BEFORE_RESET = 3; // Reset session every 3 responses for optimal performance
+let isAutoResetting = false;
 
 function formatSpeakerResults(results) {
     let text = '';
@@ -32,6 +39,12 @@ let reconnectionAttempts = 0;
 let maxReconnectionAttempts = 3;
 let reconnectionDelay = 2000; // 2 seconds between attempts
 let lastSessionParams = null;
+
+// macOS VAD tracking variables
+let macVADProcessor = null;
+let macVADEnabled = false;
+let macVADMode = 'automatic';
+let macMicrophoneEnabled = false;
 
 function sendToRenderer(channel, data) {
     const windows = BrowserWindow.getAllWindows();
@@ -62,12 +75,7 @@ function saveConversationTurn(transcription, aiResponse) {
     conversationHistory.push(conversationTurn);
     console.log('Saved conversation turn:', conversationTurn);
 
-    // Send to renderer to save in IndexedDB
-    sendToRenderer('save-conversation-turn', {
-        sessionId: currentSessionId,
-        turn: conversationTurn,
-        fullHistory: conversationHistory,
-    });
+    // Note: Conversation history storage has been removed
 }
 
 function getCurrentSessionData() {
@@ -204,13 +212,62 @@ async function attemptReconnection() {
     }
 }
 
-async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', isReconnection = false) {
+// Auto-reset session to prevent context buildup and maintain fast response times
+async function autoResetSessionInBackground() {
+    if (!lastSessionParams || isAutoResetting || isInitializingSession) {
+        console.log('Cannot auto-reset: session params missing or already resetting');
+        return;
+    }
+
+    isAutoResetting = true;
+    console.log('🔄 Auto-resetting session after 3 responses to maintain optimal performance...');
+
+    try {
+        // Close current session
+        if (global.geminiSessionRef?.current) {
+            await global.geminiSessionRef.current.close();
+        }
+
+        // Small delay to ensure clean closure
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Create fresh session with same parameters
+        const newSession = await initializeGeminiSession(
+            lastSessionParams.apiKey,
+            lastSessionParams.customPrompt,
+            lastSessionParams.profile,
+            lastSessionParams.language,
+            false, // Not a reconnection, fresh start
+            lastSessionParams.mode,
+            lastSessionParams.model
+        );
+
+        if (newSession && global.geminiSessionRef) {
+            global.geminiSessionRef.current = newSession;
+            responseCount = 0; // Reset counter
+            console.log('✅ Session auto-reset completed - ready for fast responses');
+
+            // IMPORTANT: Send conversation history to new session so it remembers previous Q&A
+            await sendReconnectionContext();
+            console.log('📝 Conversation context sent to new session - AI remembers previous answers');
+        } else {
+            console.error('❌ Failed to create new session during auto-reset');
+        }
+    } catch (error) {
+        console.error('Error during auto-reset:', error);
+    } finally {
+        isAutoResetting = false;
+    }
+}
+
+async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'interview', language = 'en-US', isReconnection = false, mode = 'interview', model = 'gemini-2.5-flash') {
     if (isInitializingSession) {
         console.log('Session initialization already in progress');
         return false;
     }
 
     isInitializingSession = true;
+    isSessionReady = false; // Reset ready state for new session
     sendToRenderer('session-initializing', true);
 
     // Store session parameters for reconnection (only if not already reconnecting)
@@ -220,8 +277,12 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
             customPrompt,
             profile,
             language,
+            mode,
+            model,
         };
         reconnectionAttempts = 0; // Reset counter for new session
+        responseCount = 0; // Reset response counter for fresh session
+        console.log('🔄 Response counter reset for new session');
     }
 
     const client = new GoogleGenAI({
@@ -233,7 +294,45 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     const enabledTools = await getEnabledTools();
     const googleSearchEnabled = enabledTools.some(tool => tool.googleSearch);
 
-    const systemPrompt = getSystemPrompt(profile, customPrompt, googleSearchEnabled);
+    let systemPrompt = getSystemPrompt(profile, customPrompt, googleSearchEnabled);
+
+    // Add explicit language instruction based on user's selected language
+    const languageMap = {
+        'en-US': 'English',
+        'en-GB': 'English',
+        'en-AU': 'English',
+        'en-IN': 'English',
+        'es-ES': 'Spanish',
+        'es-US': 'Spanish',
+        'fr-FR': 'French',
+        'de-DE': 'German',
+        'it-IT': 'Italian',
+        'pt-BR': 'Portuguese',
+        'pt-PT': 'Portuguese',
+        'ru-RU': 'Russian',
+        'ja-JP': 'Japanese',
+        'ko-KR': 'Korean',
+        'zh-CN': 'Chinese (Simplified)',
+        'zh-TW': 'Chinese (Traditional)',
+        'ar-SA': 'Arabic',
+        'hi-IN': 'Hindi',
+        'nl-NL': 'Dutch',
+        'pl-PL': 'Polish',
+        'tr-TR': 'Turkish',
+        'sv-SE': 'Swedish',
+        'da-DK': 'Danish',
+        'fi-FI': 'Finnish',
+        'no-NO': 'Norwegian',
+    };
+
+    const selectedLanguageName = languageMap[language] || 'English';
+
+    // Add critical language instruction to system prompt
+    systemPrompt += `\n\n=== CRITICAL LANGUAGE INSTRUCTION ===
+The user has selected ${selectedLanguageName} as their preferred language.
+YOU MUST respond ONLY in ${selectedLanguageName}, regardless of what language the interviewer or other person uses.
+Even if they speak in mixed languages (e.g., English + Hindi, Russian + English, etc.), you MUST respond entirely in ${selectedLanguageName}.
+This is mandatory and cannot be overridden by any other instruction.`;
 
     // Initialize new conversation session (only if not reconnecting)
     if (!isReconnection) {
@@ -241,14 +340,31 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
     }
 
     try {
-        const session = await client.live.connect({
-            model: 'gemini-live-2.5-flash-preview',
+        // Determine which model to use based on mode
+        let session;
+
+        if (mode === 'interview') {
+            // Interview mode: Use Gemini 2.5 Flash Live API for real-time audio/video
+            const liveModel = 'gemini-live-2.5-flash-preview';
+            console.log(` Interview mode: Using ${liveModel}`);
+
+            session = await client.live.connect({
+                model: liveModel,
             callbacks: {
                 onopen: function () {
                     sendToRenderer('update-status', 'Live session connected');
                 },
                 onmessage: function (message) {
                     console.log('----------------', message);
+
+                    // Handle setup complete - session is now ready
+                    if (message.setupComplete) {
+                        isSessionReady = true;
+                        isInitializingSession = false;
+                        sendToRenderer('session-initializing', false);
+                        sendToRenderer('update-status', 'Listening...');
+                        console.log('✅ Live API setup complete - session ready');
+                    }
 
                     if (message.serverContent?.inputTranscription?.results) {
                         currentTranscription += formatSpeakerResults(message.serverContent.inputTranscription.results);
@@ -275,6 +391,18 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                         }
 
                         messageBuffer = '';
+
+                        // Increment response counter and auto-reset if needed
+                        responseCount++;
+                        console.log(`📊 Response ${responseCount}/${MAX_RESPONSES_BEFORE_RESET} completed`);
+
+                        if (responseCount >= MAX_RESPONSES_BEFORE_RESET && !isAutoResetting) {
+                            console.log('🔄 Triggering auto-reset to maintain fast response times...');
+                            // Trigger reset in background after a short delay (let current response finish)
+                            setTimeout(() => {
+                                autoResetSessionInBackground();
+                            }, 2000);
+                        }
                     }
 
                     if (message.serverContent?.turnComplete) {
@@ -304,6 +432,7 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                 },
                 onclose: function (e) {
                     console.debug('Session closed:', e.reason);
+                    isSessionReady = false; // Reset ready state when session closes
 
                     // Check if the session closed due to invalid API key
                     const isApiKeyError =
@@ -330,22 +459,288 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
                     }
                 },
             },
-            config: {
-                responseModalities: ['TEXT'],
+                config: {
+                    responseModalities: ['TEXT'],
+                    tools: enabledTools,
+                    // Enable speaker diarization
+                    inputAudioTranscription: {
+                        enableSpeakerDiarization: true,
+                        minSpeakerCount: 2,
+                        maxSpeakerCount: 2,
+                    },
+                    contextWindowCompression: { slidingWindow: {} },
+                    speechConfig: { languageCode: language },
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }],
+                    },
+                },
+            });
+        } else {
+            // Coding/OA mode: Use regular Gemini API (not Live API) for better code quality
+            const regularModel = model || 'gemini-2.5-flash';
+            console.log(`💻 Coding/OA mode: Using ${regularModel} (regular API, screenshot-based)`);
+
+            // Enhanced prompt for coding mode - ULTRA AGGRESSIVE for direct answers
+            // Make Pro model even more aggressive about being concise
+            const isProModel = regularModel.includes('pro');
+            const codingPrompt = systemPrompt + `
+
+============ CRITICAL CODING MODE INSTRUCTIONS ============
+
+YOU ARE A CODING ASSISTANT IN A TIMED ASSESSMENT. FOLLOW THESE RULES EXACTLY:
+
+${isProModel ? `
+WARNING GEMINI PRO: YOU MUST BE EXTREMELY CONCISE. NO VERBOSE RESPONSES.
+MAXIMUM 10 LINES OF EXPLANATION TOTAL. FOCUS ON CODE ONLY.
+` : ''}
+
+1. WHEN YOU SEE A SCREENSHOT:
+   - DO NOT DESCRIBE the screenshot or UI elements
+   - DO NOT explain what you see on screen
+   - IMMEDIATELY read the coding problem text
+   - IMMEDIATELY solve that problem
+   - Your ONLY job is to provide the CODE SOLUTION
+
+2. RESPONSE FORMAT (STRICTLY FOLLOW):
+   - Line 1: One sentence approach (MAX 15 words)
+   - Line 2+: COMPLETE working code ONLY (language shown on screen)
+   - Last line: Time/Space complexity
+   - DO NOT include: screenshot descriptions, UI analysis, or anything not related to the code solution
+
+3. CODE REQUIREMENTS:
+   - ZERO comments in code
+   - ZERO explanations before or after code
+   - ZERO tutorial text
+   - ONLY the language shown on screen
+   - CLEAN, optimized code that passes all test cases
+
+4. ABSOLUTELY FORBIDDEN:
+   - NO long explanations or theory
+   - NO comments in code
+   - NO multiple language versions
+   - NO step-by-step walkthroughs
+   - NO example inputs/outputs
+   - NO alternative approaches discussion
+
+5. RESPONSE LENGTH LIMIT:
+   - Approach: 1 line (max 15 words)
+   - Code: As needed
+   - Complexity: 1 line
+   - TOTAL NON-CODE TEXT: MAX 2 LINES
+
+EXAMPLE OF PERFECT RESPONSE:
+"HashMap to count frequencies, find max group size, return chars with that frequency.
+
+class Solution {
+    public String majorityFrequencyGroup(String s) {
+        Map<Character, Integer> freq = new HashMap<>();
+        for (char c : s.toCharArray()) freq.put(c, freq.getOrDefault(c, 0) + 1);
+        Map<Integer, List<Character>> groups = new HashMap<>();
+        for (Map.Entry<Character, Integer> e : freq.entrySet()) {
+            groups.computeIfAbsent(e.getValue(), k -> new ArrayList<>()).add(e.getKey());
+        }
+        int maxSize = 0, maxFreq = 0;
+        for (Map.Entry<Integer, List<Character>> e : groups.entrySet()) {
+            int size = e.getValue().size();
+            if (size > maxSize || (size == maxSize && e.getKey() > maxFreq)) {
+                maxSize = size;
+                maxFreq = e.getKey();
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (char c : groups.get(maxFreq)) sb.append(c);
+        return sb.toString();
+    }
+}
+
+Time: O(n), Space: O(n)"
+
+CRITICAL FINAL REMINDER:
+- DO NOT describe what you see in the screenshot
+- DO NOT analyze UI elements, browser tabs, taskbar, or any visual elements
+- DO NOT write "This is a screenshot of..." or "I see a problem on LeetCode..."
+- IMMEDIATELY jump to solving the coding problem
+- Your response MUST START with the approach sentence, NOT a description
+
+NOW SOLVE THE CODING PROBLEM SHOWN IN THE SCREENSHOT.
+RESPONSE FORMAT: [approach sentence] + [code] + [complexity]`;
+
+            // For coding mode, we'll create a "session" object that mimics the live API
+            // but uses generateContent internally
+            session = {
+                model: regularModel,
+                client: client,
+                systemPrompt: codingPrompt,
                 tools: enabledTools,
-                // Enable speaker diarization
-                inputAudioTranscription: {
-                    enableSpeakerDiarization: true,
-                    minSpeakerCount: 2,
-                    maxSpeakerCount: 2,
+                isClosed: false,
+                conversationHistory: [], // Track conversation history for context
+
+                async sendRealtimeInput(input) {
+                    if (this.isClosed) {
+                        console.log('Session is closed, ignoring input');
+                        return;
+                    }
+
+                    try {
+                        // Only process image and text inputs for coding mode
+                        if (input.media || input.text) {
+                            console.log(`📸 Sending to ${this.model}`);
+                            sendToRenderer('update-status', 'Analyzing...');
+
+                            // Build the parts array for current message
+                            const parts = [];
+
+                            if (input.text) {
+                                parts.push({ text: input.text });
+                            }
+
+                            if (input.media) {
+                                parts.push({
+                                    inlineData: {
+                                        mimeType: input.media.mimeType,
+                                        data: input.media.data
+                                    }
+                                });
+                            }
+
+                            // Build full conversation with history
+                            const contents = [
+                                ...this.conversationHistory,
+                                { role: 'user', parts: parts }
+                            ];
+
+                            // Log caching status for performance monitoring
+                            if (this.conversationHistory.length > 0) {
+                                console.log(`Using context cache for faster response (request #${this.conversationHistory.length / 2 + 1})`);
+                            }
+
+                            // Use streaming for faster display with context caching
+                            const streamResult = await this.client.models.generateContentStream({
+                                model: this.model,
+                                contents: contents,
+                                systemInstruction: { parts: [{ text: this.systemPrompt }] },
+                                generationConfig: {
+                                    temperature: 0.7,
+                                    topK: 40,
+                                    topP: 0.95,
+                                    maxOutputTokens: 8192,
+                                },
+                                tools: this.tools.length > 0 ? this.tools : undefined,
+                                // Context caching: Cache system prompt for 5 minutes (one interview session)
+                                // This speeds up subsequent requests by ~50% by reusing cached content
+                                cachedContent: {
+                                    ttl: '300s', // 5 minutes - good for one coding/interview session
+                                },
+                            });
+
+                            // Stream the response as it arrives
+                            let responseText = '';
+
+                            // Check if it's iterable stream or has stream property
+                            const streamToIterate = streamResult.stream || streamResult;
+
+                            // Streaming optimization: Batch UI updates for smoother rendering
+                            let lastUpdateTime = Date.now();
+                            const UPDATE_INTERVAL = 50; // Update UI every 50ms for smooth rendering
+
+                            try {
+                                for await (const chunk of streamToIterate) {
+                                    if (chunk && chunk.candidates && chunk.candidates.length > 0) {
+                                        const candidate = chunk.candidates[0];
+                                        if (candidate.content && candidate.content.parts) {
+                                            for (const part of candidate.content.parts) {
+                                                if (part.text) {
+                                                    responseText += part.text;
+
+                                                    // Batch updates: Only send to UI every 50ms for smoother rendering
+                                                    const now = Date.now();
+                                                    if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+                                                        sendToRenderer('update-response', responseText);
+                                                        lastUpdateTime = now;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Send final update to ensure last chunk is displayed
+                                sendToRenderer('update-response', responseText);
+
+                                if (responseText && responseText.trim()) {
+                                    console.log(`✅ Got response: ${responseText.length} chars`);
+
+                                    // Save to conversation history
+                                    this.conversationHistory.push(
+                                        { role: 'user', parts: parts },
+                                        { role: 'model', parts: [{ text: responseText }] }
+                                    );
+
+                                    console.log(`💬 Conversation history: ${this.conversationHistory.length / 2} turns`);
+                                    sendToRenderer('update-status', 'Ready');
+                                } else {
+                                    console.error('❌ No response text received');
+                                    sendToRenderer('update-status', 'No response generated');
+                                }
+                            } catch (streamError) {
+                                console.error('❌ Streaming error:', streamError);
+                                // Fallback: try to get the complete result
+                                const finalResult = await streamResult;
+                                if (finalResult && finalResult.candidates && finalResult.candidates.length > 0) {
+                                    const candidate = finalResult.candidates[0];
+                                    if (candidate.content && candidate.content.parts) {
+                                        for (const part of candidate.content.parts) {
+                                            if (part.text) {
+                                                responseText += part.text;
+                                            }
+                                        }
+                                    }
+                                }
+                                if (responseText && responseText.trim()) {
+                                    console.log(`✅ Got response (fallback): ${responseText.length} chars`);
+
+                                    // Save to conversation history
+                                    this.conversationHistory.push(
+                                        { role: 'user', parts: parts },
+                                        { role: 'model', parts: [{ text: responseText }] }
+                                    );
+
+                                    sendToRenderer('update-response', responseText);
+                                    sendToRenderer('update-status', 'Ready');
+                                } else {
+                                    throw streamError;
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('❌ Error in coding mode:', error);
+
+                        // Show user-friendly short error message
+                        let shortMsg = 'Error';
+
+                        if (error.message && error.message.toLowerCase().includes('429')) {
+                            shortMsg = 'Rate limit exceeded';
+                        } else if (error.message && error.message.toLowerCase().includes('503')) {
+                            shortMsg = 'Server overloaded';
+                        } else if (error.message && error.message.toLowerCase().includes('401')) {
+                            shortMsg = 'Invalid API key';
+                        }
+
+                        sendToRenderer('update-status', shortMsg);
+                    }
                 },
-                contextWindowCompression: { slidingWindow: {} },
-                speechConfig: { languageCode: language },
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }],
-                },
-            },
-        });
+
+                async close() {
+                    this.isClosed = true;
+                    console.log('Coding mode session closed');
+                    sendToRenderer('update-status', 'Session closed');
+                }
+            };
+
+            sendToRenderer('update-status', `${regularModel} ready (screenshot mode)`);
+            // Coding mode is immediately ready (no Live API setup delay)
+            isSessionReady = true;
+        }
 
         isInitializingSession = false;
         sendToRenderer('session-initializing', false);
@@ -389,7 +784,7 @@ function killExistingSystemAudioDump() {
     });
 }
 
-async function startMacOSAudioCapture(geminiSessionRef) {
+async function startMacOSAudioCapture(geminiSessionRef, vadEnabled = false, vadMode = 'automatic') {
     if (process.platform !== 'darwin') return false;
 
     // Kill any existing SystemAudioDump processes first
@@ -426,14 +821,23 @@ async function startMacOSAudioCapture(geminiSessionRef) {
         spawnOptions.windowsHide = false;
     }
 
-    systemAudioProc = spawn(systemAudioPath, [], spawnOptions);
-
-    if (!systemAudioProc.pid) {
-        console.error('Failed to start SystemAudioDump');
+    try {
+        systemAudioProc = spawn(systemAudioPath, [], spawnOptions);
+    } catch (error) {
+        console.error(' Failed to spawn SystemAudioDump:', error.message);
+        console.error('Path:', systemAudioPath);
+        console.error('Hint: Make sure SystemAudioDump binary has execute permissions (chmod +x)');
         return false;
     }
 
-    console.log('SystemAudioDump started with PID:', systemAudioProc.pid);
+    if (!systemAudioProc.pid) {
+        console.error(' Failed to start SystemAudioDump - no PID');
+        console.error('Path:', systemAudioPath);
+        console.error('Hint: Binary may not have execute permissions or wrong architecture');
+        return false;
+    }
+
+    console.log(' SystemAudioDump started with PID:', systemAudioProc.pid);
 
     const CHUNK_DURATION = 0.1;
     const SAMPLE_RATE = 24000;
@@ -443,6 +847,44 @@ async function startMacOSAudioCapture(geminiSessionRef) {
 
     let audioBuffer = Buffer.alloc(0);
 
+    // Initialize VAD for macOS using settings passed from renderer
+    macVADEnabled = vadEnabled;
+    macVADMode = vadMode;
+
+    console.log(`🔧 [macOS] VAD Settings: enabled=${macVADEnabled}, mode=${macVADMode}`);
+
+    if (macVADEnabled) {
+        console.log(`🔧 [macOS] Initializing VAD in ${macVADMode.toUpperCase()} mode`);
+
+        // Initialize microphone state based on mode
+        if (macVADMode === 'automatic') {
+            macMicrophoneEnabled = true;
+            console.log('🎤 [macOS AUTOMATIC] Microphone enabled by default');
+        } else {
+            macMicrophoneEnabled = false;
+            console.log('🔴 [macOS MANUAL] Microphone OFF - click button to enable');
+        }
+
+        // Create VAD processor for macOS
+        macVADProcessor = new VADProcessor(
+            async (audioSegment, metadata) => {
+                try {
+                    // Convert Float32Array to PCM Buffer
+                    const pcmBuffer = convertFloat32ToPCMBuffer(audioSegment);
+                    const base64Data = pcmBuffer.toString('base64');
+                    await sendAudioToGemini(base64Data, geminiSessionRef);
+                    console.log('🎤 [macOS VAD] Audio segment sent:', metadata);
+                } catch (error) {
+                    console.error('❌ [macOS VAD] Failed to send audio segment:', error);
+                }
+            },
+            null, // onStateChange callback
+            macVADMode // VAD mode
+        );
+
+        console.log('✅ [macOS] VAD processor initialized');
+    }
+
     systemAudioProc.stdout.on('data', data => {
         audioBuffer = Buffer.concat([audioBuffer, data]);
 
@@ -451,8 +893,22 @@ async function startMacOSAudioCapture(geminiSessionRef) {
             audioBuffer = audioBuffer.slice(CHUNK_SIZE);
 
             const monoChunk = CHANNELS === 2 ? convertStereoToMono(chunk) : chunk;
-            const base64Data = monoChunk.toString('base64');
-            sendAudioToGemini(base64Data, geminiSessionRef);
+
+            if (macVADEnabled && macVADProcessor) {
+                // VAD mode: process through VAD
+                if (!macMicrophoneEnabled) {
+                    // Skip audio processing if mic is OFF in manual mode
+                    continue;
+                }
+
+                // Convert PCM Buffer to Float32Array for VAD
+                const float32Audio = convertPCMBufferToFloat32(monoChunk);
+                macVADProcessor.processAudio(float32Audio);
+            } else {
+                // No VAD: send directly to Gemini (legacy behavior)
+                const base64Data = monoChunk.toString('base64');
+                sendAudioToGemini(base64Data, geminiSessionRef);
+            }
 
             if (process.env.DEBUG_AUDIO) {
                 console.log(`Processed audio chunk: ${chunk.length} bytes`);
@@ -476,7 +932,20 @@ async function startMacOSAudioCapture(geminiSessionRef) {
     });
 
     systemAudioProc.on('error', err => {
-        console.error('SystemAudioDump process error:', err);
+        console.error(' SystemAudioDump process error:', err);
+
+        // Provide helpful error message for architecture issues
+        if (err.code === 'ENOENT') {
+            console.error('\n TROUBLESHOOTING:');
+            console.error('1. SystemAudioDump may not have execute permissions');
+            console.error('   Run: chmod +x /path/to/SystemAudioDump');
+            console.error('\n2. Binary may be wrong architecture for your Mac');
+            console.error('   - ARM64 binary requires Apple Silicon (M1/M2/M3)');
+            console.error('   - x64 binary requires Intel Mac or Rosetta 2');
+            console.error('\n3. For Intel Macs: Install Rosetta 2');
+            console.error('   Run: softwareupdate --install-rosetta');
+        }
+
         systemAudioProc = null;
     });
 
@@ -495,7 +964,43 @@ function convertStereoToMono(stereoBuffer) {
     return monoBuffer;
 }
 
+// Convert PCM Buffer (Int16) to Float32Array for VAD processing
+function convertPCMBufferToFloat32(pcmBuffer) {
+    const samples = pcmBuffer.length / 2; // 2 bytes per sample (Int16)
+    const float32Array = new Float32Array(samples);
+
+    for (let i = 0; i < samples; i++) {
+        const int16Sample = pcmBuffer.readInt16LE(i * 2);
+        // Convert from Int16 range [-32768, 32767] to Float32 range [-1, 1]
+        float32Array[i] = int16Sample / (int16Sample < 0 ? 32768 : 32767);
+    }
+
+    return float32Array;
+}
+
+// Convert Float32Array back to PCM Buffer (Int16) for sending to Gemini
+function convertFloat32ToPCMBuffer(float32Array) {
+    const pcmBuffer = Buffer.alloc(float32Array.length * 2); // 2 bytes per sample
+
+    for (let i = 0; i < float32Array.length; i++) {
+        // Clamp to [-1, 1] range
+        const sample = Math.max(-1, Math.min(1, float32Array[i]));
+        // Convert from Float32 range [-1, 1] to Int16 range [-32768, 32767]
+        const int16Sample = sample < 0 ? sample * 32768 : sample * 32767;
+        pcmBuffer.writeInt16LE(Math.round(int16Sample), i * 2);
+    }
+
+    return pcmBuffer;
+}
+
 function stopMacOSAudioCapture() {
+    // Clean up VAD processor
+    if (macVADProcessor) {
+        macVADProcessor.destroy();
+        macVADProcessor = null;
+        console.log('[macOS] VAD processor destroyed');
+    }
+
     if (systemAudioProc) {
         console.log('Stopping SystemAudioDump...');
         systemAudioProc.kill('SIGTERM');
@@ -523,8 +1028,8 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     // Store the geminiSessionRef globally for reconnection access
     global.geminiSessionRef = geminiSessionRef;
 
-    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US') => {
-        const session = await initializeGeminiSession(apiKey, customPrompt, profile, language);
+    ipcMain.handle('initialize-gemini', async (event, apiKey, customPrompt, profile = 'interview', language = 'en-US', mode = 'interview', model = 'gemini-2.5-flash') => {
+        const session = await initializeGeminiSession(apiKey, customPrompt, profile, language, false, mode, model);
         if (session) {
             geminiSessionRef.current = session;
             return true;
@@ -546,22 +1051,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    // Handle microphone audio on a separate channel
-    ipcMain.handle('send-mic-audio-content', async (event, { data, mimeType }) => {
-        if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
-        try {
-            process.stdout.write(',');
-            await geminiSessionRef.current.sendRealtimeInput({
-                audio: { data: data, mimeType: mimeType },
-            });
-            return { success: true };
-        } catch (error) {
-            console.error('Error sending mic audio:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('send-image-content', async (event, { data, debug }) => {
+    ipcMain.handle('send-image-content', async (event, { data, debug, isManual }) => {
         if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
 
         try {
@@ -577,10 +1067,49 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
                 return { success: false, error: 'Image buffer too small' };
             }
 
+            // Check current mode to handle differently
+            const currentMode = lastSessionParams?.mode || 'interview';
+
+            // For interview mode manual screenshots, wait for session to be ready
+            if (currentMode === 'interview' && isManual && !isSessionReady) {
+                console.log('⏳ Waiting for Live API setup to complete...');
+                // Wait up to 10 seconds for setupComplete
+                let waitTime = 0;
+                while (!isSessionReady && waitTime < 10000) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    waitTime += 100;
+                }
+                if (!isSessionReady) {
+                    console.warn('⚠️ Session not ready after 10s - screenshot may fail');
+                    return { success: false, error: 'Session not ready yet - please wait a few seconds and try again' };
+                }
+                console.log('✅ Session ready, proceeding with screenshot');
+            }
+
             process.stdout.write('!');
-            await geminiSessionRef.current.sendRealtimeInput({
-                media: { data: data, mimeType: 'image/jpeg' },
-            });
+
+            if (currentMode === 'interview' && isManual) {
+                // Interview mode (Live API) + Manual screenshot (Ctrl+Enter):
+                // Send screenshot + smart prompt to analyze what's shown
+                // This helps when user wants to ask about what's on screen
+                await geminiSessionRef.current.sendRealtimeInput({
+                    media: { data: data, mimeType: 'image/jpeg' },
+                });
+
+                // Small delay to ensure screenshot is processed
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Send contextual prompt that analyzes the screenshot content
+                await geminiSessionRef.current.sendRealtimeInput({
+                    text: "Based on this screenshot: If you see a CODING PROBLEM (LeetCode, HackerRank, CodeSignal, etc. with a code editor), immediately provide the COMPLETE CODE SOLUTION using the EXACT function signature visible in the screenshot (same class name, method name, parameter count/types/names, return type). DO NOT modify the signature - if it shows 3 parameters, your solution MUST use all 3 parameters. DO NOT search online for similar problems. Format: [1-line approach] + [clean code block without comments using EXACT signature] + [complexity] + [algorithm explanation with 2-4 brief bullet points so I can explain the approach to the interviewer]. If it's an APTITUDE/MCQ/REASONING question, answer directly and concisely in 2-3 sentences - DO NOT say 'This is a word problem' or 'not a coding question', just give the answer. If it's a regular interview question, answer briefly (2-3 sentences). If it's just code to review, explain what it does. If unclear, describe what you see."
+                });
+            } else {
+                // Either exam mode OR automated screenshots in interview mode:
+                // Just send screenshot alone (no text prompt to trigger response)
+                await geminiSessionRef.current.sendRealtimeInput({
+                    media: { data: data, mimeType: 'image/jpeg' },
+                });
+            }
 
             return { success: true };
         } catch (error) {
@@ -606,7 +1135,55 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
-    ipcMain.handle('start-macos-audio', async event => {
+    // Combined handler: Send screenshot + text
+    ipcMain.handle('send-screenshot-with-text', async (event, { imageData, text }) => {
+        if (!geminiSessionRef.current) return { success: false, error: 'No active Gemini session' };
+
+        try {
+            if (!imageData || typeof imageData !== 'string') {
+                return { success: false, error: 'Invalid image data' };
+            }
+
+            if (!text || typeof text !== 'string' || text.trim().length === 0) {
+                return { success: false, error: 'Invalid text message' };
+            }
+
+            // Check current mode to handle differently
+            const currentMode = lastSessionParams?.mode || 'interview';
+
+            if (currentMode === 'interview') {
+                // Interview mode (Live API): Send screenshot and text SEPARATELY
+                // Live API doesn't support media + text in one request
+                console.log('Interview mode: Sending screenshot + text in TWO separate requests:', text);
+
+                // 1. Send screenshot first
+                process.stdout.write('!');
+                await geminiSessionRef.current.sendRealtimeInput({
+                    media: { data: imageData, mimeType: 'image/jpeg' }
+                });
+
+                // 2. Send text prompt second
+                await geminiSessionRef.current.sendRealtimeInput({
+                    text: text.trim()
+                });
+            } else {
+                // Exam Assistant mode (Regular API): Send screenshot + text together in ONE request
+                console.log('Exam mode: Sending screenshot + text in one request:', text);
+
+                await geminiSessionRef.current.sendRealtimeInput({
+                    media: { data: imageData, mimeType: 'image/jpeg' },
+                    text: text.trim()
+                });
+            }
+
+            return { success: true };
+        } catch (error) {
+            console.error('Error sending screenshot with text:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('start-macos-audio', async (event, vadEnabled = false, vadMode = 'automatic') => {
         if (process.platform !== 'darwin') {
             return {
                 success: false,
@@ -615,7 +1192,7 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
 
         try {
-            const success = await startMacOSAudioCapture(geminiSessionRef);
+            const success = await startMacOSAudioCapture(geminiSessionRef, vadEnabled, vadMode);
             return { success };
         } catch (error) {
             console.error('Error starting macOS audio capture:', error);
@@ -633,12 +1210,50 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
         }
     });
 
+    // macOS microphone toggle handler (for manual VAD mode)
+    ipcMain.handle('toggle-macos-microphone', async (event, enabled) => {
+        try {
+            if (process.platform !== 'darwin') {
+                return { success: false, error: 'macOS only' };
+            }
+
+            macMicrophoneEnabled = enabled;
+            console.log(`🎤 [macOS] Microphone ${enabled ? 'enabled' : 'disabled'}`);
+
+            if (macVADProcessor && macVADMode === 'manual') {
+                if (enabled) {
+                    // Manual mode: enable mic and start recording
+                    macVADProcessor.resume();
+                    console.log('[macOS MANUAL] Mic ON - now recording');
+                } else {
+                    // Manual mode: disable mic and commit audio
+                    if (macVADProcessor.audioBuffer && macVADProcessor.audioBuffer.length > 0) {
+                        console.log('[macOS MANUAL] Mic OFF - committing audio');
+                        macVADProcessor.commit();
+                    } else {
+                        macVADProcessor.pause();
+                        console.log('[macOS MANUAL] Mic OFF - no audio to commit');
+                    }
+                }
+            }
+
+            return { success: true, enabled: macMicrophoneEnabled };
+        } catch (error) {
+            console.error('Error toggling macOS microphone:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
     ipcMain.handle('close-session', async event => {
         try {
             stopMacOSAudioCapture();
 
             // Clear session params to prevent reconnection when user closes session
             lastSessionParams = null;
+
+            // Reset response counter
+            responseCount = 0;
+            console.log('🔄 Response counter reset on session close');
 
             // Cleanup any pending resources and stop audio/video capture
             if (geminiSessionRef.current) {
@@ -649,6 +1264,19 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true };
         } catch (error) {
             console.error('Error closing session:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // VAD mode update handler
+    ipcMain.handle('update-vad-mode', async (event, vadMode) => {
+        try {
+            console.log(`VAD mode updated to: ${vadMode}`);
+            // The renderer process will handle the VAD mode change
+            // This handler is mainly for logging and potential future use
+            return { success: true, mode: vadMode };
+        } catch (error) {
+            console.error('Error updating VAD mode:', error);
             return { success: false, error: error.message };
         }
     });
@@ -698,6 +1326,8 @@ module.exports = {
     killExistingSystemAudioDump,
     startMacOSAudioCapture,
     convertStereoToMono,
+    convertPCMBufferToFloat32,
+    convertFloat32ToPCMBuffer,
     stopMacOSAudioCapture,
     sendAudioToGemini,
     setupGeminiIpcHandlers,

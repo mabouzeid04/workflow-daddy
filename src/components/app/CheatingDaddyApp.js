@@ -3,7 +3,6 @@ import { AppHeader } from './AppHeader.js';
 import { MainView } from '../views/MainView.js';
 import { CustomizeView } from '../views/CustomizeView.js';
 import { HelpView } from '../views/HelpView.js';
-import { HistoryView } from '../views/HistoryView.js';
 import { AssistantView } from '../views/AssistantView.js';
 import { OnboardingView } from '../views/OnboardingView.js';
 import { AdvancedView } from '../views/AdvancedView.js';
@@ -110,6 +109,8 @@ export class CheatingDaddyApp extends LitElement {
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
         advancedMode: { type: Boolean },
+        currentMode: { type: String },
+        currentModel: { type: String },
         _viewInstances: { type: Object, state: true },
         _isClickThrough: { state: true },
         _awaitingNewResponse: { state: true },
@@ -123,12 +124,14 @@ export class CheatingDaddyApp extends LitElement {
         this.startTime = null;
         this.isRecording = false;
         this.sessionActive = false;
-        this.selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
+        this.selectedProfile = localStorage.getItem('selectedProfile') || 'exam';
         this.selectedLanguage = localStorage.getItem('selectedLanguage') || 'en-US';
         this.selectedScreenshotInterval = localStorage.getItem('selectedScreenshotInterval') || '5';
-        this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'medium';
-        this.layoutMode = localStorage.getItem('layoutMode') || 'normal';
+        this.selectedImageQuality = localStorage.getItem('selectedImageQuality') || 'high';
+        this.layoutMode = localStorage.getItem('layoutMode') || 'compact';
         this.advancedMode = localStorage.getItem('advancedMode') === 'true';
+        this.currentMode = localStorage.getItem('selectedMode') || 'interview';
+        this.currentModel = '';
         this.responses = [];
         this.currentResponseIndex = -1;
         this._viewInstances = new Map();
@@ -157,6 +160,10 @@ export class CheatingDaddyApp extends LitElement {
                 this._isClickThrough = isEnabled;
             });
         }
+
+        // Add global keyboard event listener for Ctrl+G
+        this.boundKeydownHandler = this.handleGlobalKeydown.bind(this);
+        document.addEventListener('keydown', this.boundKeydownHandler);
     }
 
     disconnectedCallback() {
@@ -166,6 +173,11 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.removeAllListeners('update-response');
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
+        }
+        
+        // Remove global keyboard event listener
+        if (this.boundKeydownHandler) {
+            document.removeEventListener('keydown', this.boundKeydownHandler);
         }
     }
 
@@ -223,10 +235,6 @@ export class CheatingDaddyApp extends LitElement {
         this.requestUpdate();
     }
 
-    handleHistoryClick() {
-        this.currentView = 'history';
-        this.requestUpdate();
-    }
 
     handleAdvancedClick() {
         this.currentView = 'advanced';
@@ -234,7 +242,7 @@ export class CheatingDaddyApp extends LitElement {
     }
 
     async handleClose() {
-        if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history') {
+        if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'advanced') {
             this.currentView = 'main';
         } else if (this.currentView === 'assistant') {
             cheddar.stopCapture();
@@ -276,9 +284,40 @@ export class CheatingDaddyApp extends LitElement {
             return;
         }
 
-        await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage);
-        // Pass the screenshot interval as string (including 'manual' option)
-        cheddar.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        // Auto-set mode based on profile
+        let selectedMode;
+        if (this.selectedProfile === 'exam') {
+            // Exam Assistant -> Coding/OA mode (forced)
+            selectedMode = 'coding';
+            localStorage.setItem('selectedMode', 'coding');
+        } else {
+            // All other profiles -> Interview mode (forced)
+            selectedMode = 'interview';
+            localStorage.setItem('selectedMode', 'interview');
+        }
+
+        // Get model from localStorage (only matters for coding mode)
+        const selectedModel = localStorage.getItem('selectedModel') || 'gemini-2.5-pro';
+
+        await cheddar.initializeGemini(this.selectedProfile, this.selectedLanguage, selectedMode, selectedModel);
+
+        // Set current mode and model for header display
+        this.currentMode = selectedMode;
+        if (selectedMode === 'interview') {
+            this.currentModel = 'gemini-live-2.5-flash-preview';
+        } else {
+            this.currentModel = selectedModel;
+        }
+
+        // For coding/OA mode (exam-assistant), ALWAYS use manual mode to avoid rate limits
+        // For interview mode, use the user's selected interval
+        const screenshotMode = selectedMode === 'coding' ? 'manual' : this.selectedScreenshotInterval;
+
+        if (selectedMode === 'coding') {
+            console.log('💻 Coding/OA mode (Exam Assistant): Manual capture only - Press Ctrl+Enter to analyze screenshot');
+        }
+
+        cheddar.startCapture(screenshotMode, this.selectedImageQuality);
         this.responses = [];
         this.currentResponseIndex = -1;
         this.startTime = Date.now();
@@ -289,6 +328,44 @@ export class CheatingDaddyApp extends LitElement {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
             await ipcRenderer.invoke('open-external', 'https://cheatingdaddy.com/help/api-key');
+        }
+    }
+
+        handleClearAndRestart() {
+        // Clear the current session and responses
+        this.responses = [];
+        this.currentResponseIndex = -1;
+        this.startTime = null;
+
+        // Stop any ongoing capture if in assistant view
+        if (this.currentView === 'assistant' && window.cheddar) {
+            window.cheddar.stopCapture();
+        }
+
+        // Return to main view
+        this.currentView = 'main';
+        this.setStatus('Session cleared. Starting new session...');
+
+        // Request update to refresh the UI
+        this.requestUpdate();
+
+        // Automatically start a new session after a brief delay
+        setTimeout(() => {
+            this.handleStart();
+        }, 100);
+    }
+
+    handleGlobalKeydown(e) {
+        // Handle Ctrl+Alt+R (or Cmd+Option+R on Mac) for clearing and restarting session
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        const isClearShortcut = isMac
+            ? e.metaKey && e.altKey && e.key === 'r'
+            : e.ctrlKey && e.altKey && e.key === 'r';
+
+        if (isClearShortcut) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleClearAndRestart();
         }
     }
 
@@ -336,7 +413,8 @@ export class CheatingDaddyApp extends LitElement {
             console.error('Failed to send message:', result.error);
             this.setStatus('Error sending message: ' + result.error);
         } else {
-            this.setStatus('Message sent...');
+            // Don't set "Message sent..." here - status is already managed by sendRealtimeInput
+            // which sends: "Analyzing..." → "Ready" (success) or "Server overloaded" (error)
             this._awaitingNewResponse = true;
         }
     }
@@ -407,6 +485,7 @@ export class CheatingDaddyApp extends LitElement {
                         .onStart=${() => this.handleStart()}
                         .onAPIKeyHelp=${() => this.handleAPIKeyHelp()}
                         .onLayoutModeChange=${layoutMode => this.handleLayoutModeChange(layoutMode)}
+                        .onClearAndRestart=${() => this.handleClearAndRestart()}
                     ></main-view>
                 `;
 
@@ -431,9 +510,6 @@ export class CheatingDaddyApp extends LitElement {
             case 'help':
                 return html` <help-view .onExternalLinkClick=${url => this.handleExternalLinkClick(url)}></help-view> `;
 
-            case 'history':
-                return html` <history-view></history-view> `;
-
             case 'advanced':
                 return html` <advanced-view></advanced-view> `;
 
@@ -443,6 +519,7 @@ export class CheatingDaddyApp extends LitElement {
                         .responses=${this.responses}
                         .currentResponseIndex=${this.currentResponseIndex}
                         .selectedProfile=${this.selectedProfile}
+                        .selectedLanguage=${this.selectedLanguage}
                         .onSendText=${message => this.handleSendText(message)}
                         .shouldAnimateResponse=${this.shouldAnimateResponse}
                         @response-index-changed=${this.handleResponseIndexChanged}
@@ -472,14 +549,16 @@ export class CheatingDaddyApp extends LitElement {
                         .currentView=${this.currentView}
                         .statusText=${this.statusText}
                         .startTime=${this.startTime}
+                        .currentMode=${this.currentMode}
+                        .currentModel=${this.currentModel}
                         .advancedMode=${this.advancedMode}
                         .onCustomizeClick=${() => this.handleCustomizeClick()}
                         .onHelpClick=${() => this.handleHelpClick()}
-                        .onHistoryClick=${() => this.handleHistoryClick()}
                         .onAdvancedClick=${() => this.handleAdvancedClick()}
                         .onCloseClick=${() => this.handleClose()}
                         .onBackClick=${() => this.handleBackClick()}
                         .onHideToggleClick=${() => this.handleHideToggle()}
+                        .onRestartClick=${() => this.handleClearAndRestart()}
                         ?isClickThrough=${this._isClickThrough}
                     ></app-header>
                     <div class="${mainContentClass}">

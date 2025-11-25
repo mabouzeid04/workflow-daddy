@@ -125,7 +125,7 @@ export class MainView extends LitElement {
         .link {
             color: var(--link-color);
             text-decoration: underline;
-            cursor: pointer;
+            cursor: default;
         }
 
         .shortcut-hint {
@@ -149,6 +149,7 @@ export class MainView extends LitElement {
         isInitializing: { type: Boolean },
         onLayoutModeChange: { type: Function },
         showApiKeyError: { type: Boolean },
+        onClearAndRestart: { type: Function },
     };
 
     constructor() {
@@ -158,6 +159,7 @@ export class MainView extends LitElement {
         this.isInitializing = false;
         this.onLayoutModeChange = () => {};
         this.showApiKeyError = false;
+        this.onClearAndRestart = () => {};
         this.boundKeydownHandler = this.handleKeydown.bind(this);
     }
 
@@ -210,6 +212,10 @@ export class MainView extends LitElement {
 
     handleAPIKeyHelpClick() {
         this.onAPIKeyHelp();
+    }
+
+    handleClearAndRestart() {
+        this.onClearAndRestart();
     }
 
     handleResetOnboarding() {
@@ -301,6 +307,9 @@ export class MainView extends LitElement {
                 dont have an api key?
                 <span @click=${this.handleAPIKeyHelpClick} class="link">get one here</span>
             </p>
+                    <p class="shortcut-hint">
+            Press <strong>Ctrl+Alt+R</strong> to clear session and automatically restart
+        </p>
         `;
     }
 }

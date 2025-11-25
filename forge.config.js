@@ -3,10 +3,29 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
     packagerConfig: {
-        asar: true,
+        asar: {
+            unpack: '**/{onnxruntime-node,@ricky0123}/**/*',
+        },
         extraResource: ['./src/assets/SystemAudioDump'],
         name: 'Cheating Daddy',
         icon: 'src/assets/logo',
+        // Set executable permissions for SystemAudioDump on macOS
+        afterCopy: [
+            (buildPath, electronVersion, platform, arch, callback) => {
+                if (platform === 'darwin') {
+                    const fs = require('fs');
+                    const path = require('path');
+                    const binaryPath = path.join(buildPath, '../SystemAudioDump');
+                    try {
+                        fs.chmodSync(binaryPath, 0o755); // rwxr-xr-x
+                        console.log(' Set execute permissions for SystemAudioDump');
+                    } catch (error) {
+                        console.warn(' Failed to set permissions for SystemAudioDump:', error.message);
+                    }
+                }
+                callback();
+            }
+        ],
         // use `security find-identity -v -p codesigning` to find your identity
         // for macos signing
         // also fuck apple
@@ -33,7 +52,7 @@ module.exports = {
                 name: 'cheating-daddy',
                 productName: 'Cheating Daddy',
                 shortcutName: 'Cheating Daddy',
-                createDesktopShortcut: true,
+                createDesktopShortcut: false,
                 createStartMenuShortcut: true,
             },
         },
@@ -51,7 +70,8 @@ module.exports = {
                     genericName: 'AI Assistant',
                     description: 'AI assistant for interviews and learning',
                     categories: ['Development', 'Education'],
-                    icon: 'src/assets/logo.png'
+                    icon: 'src/assets/logo.png',
+                    desktopIntegration: false  // Prevent automatic desktop shortcut creation
                 }
             },
         },

@@ -6,8 +6,12 @@ const { applyStealthMeasures, startTitleRandomization } = require('./stealthFeat
 
 let mouseEventsIgnored = false;
 let windowResizing = false;
+let windowMoving = false; // Track if window is being moved manually
 let resizeAnimation = null;
+let lastMoveTime = 0; // Track last time window was moved
+let intendedWindowSize = { width: 800, height: 450 }; // Track intended size to prevent drift
 const RESIZE_ANIMATION_DURATION = 500; // milliseconds
+const MOVE_COOLDOWN = 300; // milliseconds to wait after movement before allowing resize
 
 function ensureDataDirectories() {
     const homeDir = os.homedir();
@@ -26,11 +30,14 @@ function ensureDataDirectories() {
 }
 
 function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
-    // Get layout preference (default to 'normal')
-    let windowWidth = 1100;
-    let windowHeight = 800;
+    // Get layout preference (default to 'normal') - Optimal height, comfortable width
+    let windowWidth = 800;
+    let windowHeight = 450;
 
-    const mainWindow = new BrowserWindow({
+    // Store initial intended size
+    intendedWindowSize = { width: windowWidth, height: windowHeight };
+
+    const windowOptions = {
         width: windowWidth,
         height: windowHeight,
         frame: false,
@@ -48,7 +55,18 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
             allowRunningInsecureContent: false,
         },
         backgroundColor: '#00000000',
-    });
+    };
+
+    // Add platform-specific window types for stealth
+    if (process.platform === 'win32') {
+        // type: 'toolbar' helps hide from various Windows UI elements
+        windowOptions.type = 'toolbar';
+    } else if (process.platform === 'darwin') {
+        // type: 'panel' on macOS for better stealth (similar to InterviewCoder)
+        windowOptions.type = 'panel';
+    }
+
+    const mainWindow = new BrowserWindow(windowOptions);
 
     const { session, desktopCapturer } = require('electron');
     session.defaultSession.setDisplayMediaRequestHandler(
@@ -62,7 +80,25 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
 
     mainWindow.setResizable(false);
     mainWindow.setContentProtection(true);
+
+    // Enhanced always-on-top configuration to stay above all apps including UWP apps
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+    // Set always on top with the highest level
+    // Using 'pop-up-menu' level which is higher than most apps but below screen-saver
+    // This prevents hiding behind apps like WhatsApp, Unstop, etc.
+    if (process.platform === 'win32') {
+        // On Windows, use 'pop-up-menu' level with relative level 1
+        // This keeps window above normal apps and UWP apps
+        mainWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
+    } else if (process.platform === 'darwin') {
+        // On macOS, use 'floating' level (allows system dialogs and Activity Monitor to appear above)
+        // 'screen-saver' is too aggressive and prevents users from closing the app
+        mainWindow.setAlwaysOnTop(true, 'floating', 1);
+    } else {
+        // Linux and other platforms
+        mainWindow.setAlwaysOnTop(true, 'pop-up-menu');
+    }
 
     // Center window at the top of the screen
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -71,9 +107,44 @@ function createWindow(sendToRenderer, geminiSessionRef, randomNames = null) {
     const y = 0;
     mainWindow.setPosition(x, y);
 
-    if (process.platform === 'win32') {
-        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-    }
+    // Additional focus management to ensure window stays on top
+    // Force focus periodically to maintain top position
+    const maintainTopPosition = () => {
+        if (!mainWindow.isDestroyed() && mainWindow.isVisible()) {
+            // IMPORTANT: Only maintain top position when window is NOT focused
+            // When focused, user is interacting (dropdowns, inputs, etc.)
+            // Calling moveTop() or setAlwaysOnTop() will close native dropdowns!
+            if (!mainWindow.isFocused()) {
+                mainWindow.moveTop();
+
+                // Re-apply always on top only when NOT focused
+                // setAlwaysOnTop() closes HTML select dropdowns on Windows
+                if (process.platform === 'win32') {
+                    mainWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
+                }
+            }
+        }
+    };
+
+    // Check and maintain top position every 2 seconds
+    const topPositionInterval = setInterval(maintainTopPosition, 2000);
+
+    // Clean up interval when window is closed
+    mainWindow.on('closed', () => {
+        clearInterval(topPositionInterval);
+    });
+
+    // Handle focus-lost event to immediately restore top position
+    mainWindow.on('blur', () => {
+        if (!mainWindow.isDestroyed() && mainWindow.isVisible()) {
+            // Small delay to avoid conflicts with other apps
+            setTimeout(() => {
+                if (!mainWindow.isDestroyed() && mainWindow.isVisible()) {
+                    mainWindow.moveTop();
+                }
+            }, 100);
+        }
+    });
 
     mainWindow.loadFile(path.join(__dirname, '../index.html'));
 
@@ -148,11 +219,13 @@ function getDefaultKeybinds() {
         moveRight: isMac ? 'Alt+Right' : 'Ctrl+Right',
         toggleVisibility: isMac ? 'Cmd+\\' : 'Ctrl+\\',
         toggleClickThrough: isMac ? 'Cmd+M' : 'Ctrl+M',
+        toggleMicrophone: isMac ? 'Cmd+Shift+M' : 'Ctrl+Shift+M',
         nextStep: isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
         previousResponse: isMac ? 'Cmd+[' : 'Ctrl+[',
         nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
         scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
         scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+        copyCodeBlocks: isMac ? 'Cmd+Shift+C' : 'Ctrl+Shift+C',
         emergencyErase: isMac ? 'Cmd+Shift+E' : 'Ctrl+Shift+E',
     };
 }
@@ -171,23 +244,60 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
     const movementActions = {
         moveUp: () => {
             if (!mainWindow.isVisible()) return;
+            windowMoving = true;
+            lastMoveTime = Date.now();
             const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX, currentY - moveIncrement);
+            // CRITICAL: Always use intendedWindowSize, NOT getSize()
+            // This prevents cumulative size drift from repeated movements
+            mainWindow.setBounds({
+                x: currentX,
+                y: currentY - moveIncrement,
+                width: intendedWindowSize.width,
+                height: intendedWindowSize.height
+            }, false);
+            setTimeout(() => { windowMoving = false; }, 100);
         },
         moveDown: () => {
             if (!mainWindow.isVisible()) return;
+            windowMoving = true;
+            lastMoveTime = Date.now();
             const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX, currentY + moveIncrement);
+            // CRITICAL: Always use intendedWindowSize, NOT getSize()
+            mainWindow.setBounds({
+                x: currentX,
+                y: currentY + moveIncrement,
+                width: intendedWindowSize.width,
+                height: intendedWindowSize.height
+            }, false);
+            setTimeout(() => { windowMoving = false; }, 100);
         },
         moveLeft: () => {
             if (!mainWindow.isVisible()) return;
+            windowMoving = true;
+            lastMoveTime = Date.now();
             const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX - moveIncrement, currentY);
+            // CRITICAL: Always use intendedWindowSize, NOT getSize()
+            mainWindow.setBounds({
+                x: currentX - moveIncrement,
+                y: currentY,
+                width: intendedWindowSize.width,
+                height: intendedWindowSize.height
+            }, false);
+            setTimeout(() => { windowMoving = false; }, 100);
         },
         moveRight: () => {
             if (!mainWindow.isVisible()) return;
+            windowMoving = true;
+            lastMoveTime = Date.now();
             const [currentX, currentY] = mainWindow.getPosition();
-            mainWindow.setPosition(currentX + moveIncrement, currentY);
+            // CRITICAL: Always use intendedWindowSize, NOT getSize()
+            mainWindow.setBounds({
+                x: currentX + moveIncrement,
+                y: currentY,
+                width: intendedWindowSize.width,
+                height: intendedWindowSize.height
+            }, false);
+            setTimeout(() => { windowMoving = false; }, 100);
         },
     };
 
@@ -316,6 +426,19 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         }
     }
 
+    // Register copy code blocks shortcut
+    if (keybinds.copyCodeBlocks) {
+        try {
+            globalShortcut.register(keybinds.copyCodeBlocks, () => {
+                console.log('Copy code blocks shortcut triggered');
+                sendToRenderer('copy-code-blocks');
+            });
+            console.log(`Registered copyCodeBlocks: ${keybinds.copyCodeBlocks}`);
+        } catch (error) {
+            console.error(`Failed to register copyCodeBlocks (${keybinds.copyCodeBlocks}):`, error);
+        }
+    }
+
     // Register emergency erase shortcut
     if (keybinds.emergencyErase) {
         try {
@@ -341,6 +464,101 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
         } catch (error) {
             console.error(`Failed to register emergencyErase (${keybinds.emergencyErase}):`, error);
         }
+    }
+
+    // Register toggle microphone shortcut (works globally in interview mode with manual VAD)
+    if (keybinds.toggleMicrophone) {
+        try {
+            globalShortcut.register(keybinds.toggleMicrophone, () => {
+                console.log('🎤 Toggle microphone shortcut triggered');
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    // Execute without focusing the window - runs in background
+                    mainWindow.webContents.executeJavaScript(`
+                        (async () => {
+                            const selectedMode = localStorage.getItem('selectedMode') || 'interview';
+                            const vadMode = localStorage.getItem('vadMode') || 'automatic';
+                            const selectedProfile = localStorage.getItem('selectedProfile') || 'interview';
+                            const currentView = window.cheddar?.getCurrentView() || 'main';
+
+                            // Only allow mic toggle in interview mode with manual VAD mode
+                            // Must be in assistant view (active session)
+                            // Exclude exam profile from mic toggle
+                            if (selectedMode === 'interview' && vadMode === 'manual' && selectedProfile !== 'exam' && currentView === 'assistant') {
+                                // Try multiple ways to find AssistantView component
+                                let assistantView = document.querySelector('assistant-view');
+
+                                // If not found directly, check inside shadowRoot
+                                if (!assistantView) {
+                                    const app = document.querySelector('cheating-daddy-app');
+                                    if (app && app.shadowRoot) {
+                                        assistantView = app.shadowRoot.querySelector('assistant-view');
+                                    }
+                                }
+
+                                if (assistantView) {
+                                    // Toggle the mic state
+                                    const newState = !assistantView.micEnabled;
+                                    assistantView.micEnabled = newState;
+
+                                    // Trigger the mic toggle in renderer
+                                    if (window.cheddar && window.cheddar.toggleMicrophone) {
+                                        await window.cheddar.toggleMicrophone(newState);
+                                    }
+
+                                    // Update the UI
+                                    assistantView.requestUpdate();
+
+                                    console.log('🎤 Microphone toggled via shortcut: ' + (newState ? 'ON' : 'OFF'));
+                                    return { success: true, enabled: newState };
+                                } else {
+                                    return { success: false, reason: 'AssistantView element not found in DOM' };
+                                }
+                            }
+
+                            // Provide detailed reason for failure
+                            let reason = 'Conditions not met: ';
+                            if (selectedMode !== 'interview') reason += 'Not in interview mode. ';
+                            if (vadMode !== 'manual') reason += 'VAD mode is not manual (current: ' + vadMode + '). ';
+                            if (selectedProfile === 'exam') reason += 'Exam profile active. ';
+                            if (currentView !== 'assistant') reason += 'Not in assistant view (current: ' + currentView + '). ';
+
+                            return { success: false, reason: reason };
+                        })();
+                    `).then(result => {
+                        if (result.success) {
+                            console.log(`Microphone toggled: ${result.enabled ? 'ON' : 'OFF'}`);
+                        } else {
+                            console.log('Mic toggle skipped:', result.reason);
+                        }
+                    }).catch(err => {
+                        console.error('Error toggling microphone:', err);
+                    });
+                }
+            });
+            console.log(`Registered toggleMicrophone: ${keybinds.toggleMicrophone}`);
+        } catch (error) {
+            console.error(`Failed to register toggleMicrophone (${keybinds.toggleMicrophone}):`, error);
+        }
+    }
+
+    // Register restart session shortcut (Ctrl+Alt+R / Cmd+Option+R)
+    const isMac = process.platform === 'darwin';
+    const restartShortcut = isMac ? 'Cmd+Alt+R' : 'Ctrl+Alt+R';
+    try {
+        globalShortcut.register(restartShortcut, () => {
+            console.log('Restart session shortcut triggered');
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                // Trigger the clear and restart function in the renderer
+                mainWindow.webContents.executeJavaScript(`
+                    if (window.cheddar && window.cheddar.app) {
+                        window.cheddar.app.handleClearAndRestart();
+                    }
+                `);
+            }
+        });
+        console.log(`Registered restart session: ${restartShortcut}`);
+    } catch (error) {
+        console.error(`Failed to register restart session (${restartShortcut}):`, error);
     }
 }
 
@@ -397,6 +615,7 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
             }
 
             const [startWidth, startHeight] = mainWindow.getSize();
+            const [startX, startY] = mainWindow.getPosition(); // Save current position
 
             // If already at target size, no need to animate
             if (startWidth === targetWidth && startHeight === targetHeight) {
@@ -408,7 +627,10 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
             console.log(`Starting animated resize from ${startWidth}x${startHeight} to ${targetWidth}x${targetHeight}`);
 
             windowResizing = true;
-            mainWindow.setResizable(true);
+
+            // CRITICAL FIX: Do NOT use setResizable(true) on Windows!
+            // It causes DPI scaling and unpredictable size changes
+            // We can resize without making window resizable by using setBounds
 
             const frameRate = 60; // 60 FPS
             const totalFrames = Math.floor(RESIZE_ANIMATION_DURATION / (1000 / frameRate));
@@ -433,14 +655,15 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
                     windowResizing = false;
                     return;
                 }
-                mainWindow.setSize(currentWidth, currentHeight);
 
-                // Re-center the window during animation
-                const primaryDisplay = screen.getPrimaryDisplay();
-                const { width: screenWidth } = primaryDisplay.workAreaSize;
-                const x = Math.floor((screenWidth - currentWidth) / 2);
-                const y = 0;
-                mainWindow.setPosition(x, y);
+                // Use setBounds instead of setSize to have more control
+                // This prevents Windows from applying automatic scaling
+                mainWindow.setBounds({
+                    x: startX,
+                    y: startY,
+                    width: currentWidth,
+                    height: currentHeight
+                }, false); // false = don't animate (we're doing our own animation)
 
                 if (currentFrame >= totalFrames) {
                     clearInterval(resizeAnimation);
@@ -449,12 +672,16 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
 
                     // Check if window is still valid before final operations
                     if (!mainWindow.isDestroyed()) {
-                        mainWindow.setResizable(false);
+                        // Final size with exact dimensions
+                        mainWindow.setBounds({
+                            x: startX,
+                            y: startY,
+                            width: targetWidth,
+                            height: targetHeight
+                        }, false);
 
-                        // Ensure final size is exact
-                        mainWindow.setSize(targetWidth, targetHeight);
-                        const finalX = Math.floor((screenWidth - targetWidth) / 2);
-                        mainWindow.setPosition(finalX, 0);
+                        // Update intended size to match the new target
+                        intendedWindowSize = { width: targetWidth, height: targetHeight };
                     }
 
                     console.log(`Animation complete: ${targetWidth}x${targetHeight}`);
@@ -468,6 +695,25 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
         try {
             if (mainWindow.isDestroyed()) {
                 return { success: false, error: 'Window has been destroyed' };
+            }
+
+            // Skip resize if window is being moved manually
+            if (windowMoving) {
+                console.log('Skipping resize - window is being moved');
+                return { success: true };
+            }
+
+            // Skip resize if recently moved (cooldown period)
+            const timeSinceLastMove = Date.now() - lastMoveTime;
+            if (timeSinceLastMove < MOVE_COOLDOWN) {
+                console.log(`Skipping resize - moved ${timeSinceLastMove}ms ago (cooldown: ${MOVE_COOLDOWN}ms)`);
+                return { success: true };
+            }
+
+            // Skip resize if already resizing
+            if (windowResizing) {
+                console.log('Skipping resize - resize already in progress');
+                return { success: true };
             }
 
             // Get current view and layout mode from renderer
@@ -485,28 +731,28 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
 
             let targetWidth, targetHeight;
 
-            // Determine base size from layout mode
-            const baseWidth = layoutMode === 'compact' ? 700 : 900;
-            const baseHeight = layoutMode === 'compact' ? 500 : 600;
+            // Determine base size from layout mode - Optimal height, comfortable width
+            const baseWidth = layoutMode === 'compact' ? 650 : 800;
+            const baseHeight = layoutMode === 'compact' ? 350 : 450;
 
             // Adjust height based on view
             switch (viewName) {
                 case 'customize':
                 case 'settings':
                     targetWidth = baseWidth;
-                    targetHeight = layoutMode === 'compact' ? 700 : 800;
+                    targetHeight = layoutMode === 'compact' ? 480 : 580;
                     break;
                 case 'help':
                     targetWidth = baseWidth;
-                    targetHeight = layoutMode === 'compact' ? 650 : 750;
+                    targetHeight = layoutMode === 'compact' ? 450 : 550;
                     break;
                 case 'history':
                     targetWidth = baseWidth;
-                    targetHeight = layoutMode === 'compact' ? 650 : 750;
+                    targetHeight = layoutMode === 'compact' ? 450 : 550;
                     break;
                 case 'advanced':
                     targetWidth = baseWidth;
-                    targetHeight = layoutMode === 'compact' ? 600 : 700;
+                    targetHeight = layoutMode === 'compact' ? 400 : 500;
                     break;
                 case 'main':
                 case 'assistant':

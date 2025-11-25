@@ -23,6 +23,34 @@ export class AppHeader extends LitElement {
             font-size: var(--header-font-size);
             font-weight: 600;
             -webkit-app-region: drag;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .model-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: var(--accent-background, rgba(0, 122, 255, 0.15));
+            color: var(--accent-color, #007aff);
+            border: 1px solid var(--accent-border, rgba(0, 122, 255, 0.3));
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .model-badge.interview {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+            border-color: rgba(52, 211, 153, 0.3);
+        }
+
+        .model-badge.coding {
+            background: rgba(251, 146, 60, 0.15);
+            color: #fb923c;
+            border-color: rgba(251, 146, 60, 0.3);
         }
 
         .header-actions {
@@ -92,12 +120,14 @@ export class AppHeader extends LitElement {
         currentView: { type: String },
         statusText: { type: String },
         startTime: { type: Number },
+        currentMode: { type: String },
+        currentModel: { type: String },
         onCustomizeClick: { type: Function },
         onHelpClick: { type: Function },
-        onHistoryClick: { type: Function },
         onCloseClick: { type: Function },
         onBackClick: { type: Function },
         onHideToggleClick: { type: Function },
+        onRestartClick: { type: Function },
         isClickThrough: { type: Boolean, reflect: true },
         advancedMode: { type: Boolean },
         onAdvancedClick: { type: Function },
@@ -108,12 +138,14 @@ export class AppHeader extends LitElement {
         this.currentView = 'main';
         this.statusText = '';
         this.startTime = null;
+        this.currentMode = 'interview';
+        this.currentModel = '';
         this.onCustomizeClick = () => {};
         this.onHelpClick = () => {};
-        this.onHistoryClick = () => {};
         this.onCloseClick = () => {};
         this.onBackClick = () => {};
         this.onHideToggleClick = () => {};
+        this.onRestartClick = () => {};
         this.isClickThrough = false;
         this.advancedMode = false;
         this.onAdvancedClick = () => {};
@@ -187,23 +219,62 @@ export class AppHeader extends LitElement {
 
     getElapsedTime() {
         if (this.currentView === 'assistant' && this.startTime) {
-            const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-            return `${elapsed}s`;
+            const totalSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            // Format with leading zeros
+            const pad = (num) => String(num).padStart(2, '0');
+
+            if (hours > 0) {
+                // Show hours when > 0: "1:23:45"
+                return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+            } else {
+                // Show minutes and seconds: "23:45"
+                return `${minutes}:${pad(seconds)}`;
+            }
         }
         return '';
     }
 
+    getModelDisplayName() {
+        if (!this.currentModel) return '';
+
+        // Format model names for display
+        const modelMap = {
+            'gemini-live-2.5-flash-preview': '2.5 Flash Live',
+            'gemini-2.5-flash-native-audio-preview-09-2025': '2.5 Flash Live',
+            'gemini-2.5-flash': '2.5 Flash',
+            'gemini-2.5-pro': '2.5 Pro',
+            'gemini-2.0-flash-exp': '2.0 Flash',
+        };
+
+        return modelMap[this.currentModel] || this.currentModel;
+    }
+
+    getModelBadgeClass() {
+        return this.currentMode === 'interview' ? 'interview' : 'coding';
+    }
+
     isNavigationView() {
-        const navigationViews = ['customize', 'help', 'history', 'advanced'];
+        const navigationViews = ['customize', 'help', 'advanced'];
         return navigationViews.includes(this.currentView);
     }
 
     render() {
         const elapsedTime = this.getElapsedTime();
+        const modelName = this.getModelDisplayName();
 
         return html`
             <div class="header">
-                <div class="header-title">${this.getViewTitle()}</div>
+                <div class="header-title">
+                    ${this.getViewTitle()}
+                    ${modelName && this.currentView === 'assistant'
+                        ? html`<span class="model-badge ${this.getModelBadgeClass()}">${modelName}</span>`
+                        : ''}
+                </div>
                 <div class="header-actions">
                     ${this.currentView === 'assistant'
                         ? html`
@@ -213,49 +284,9 @@ export class AppHeader extends LitElement {
                         : ''}
                     ${this.currentView === 'main'
                         ? html`
-                              <button class="icon-button" @click=${this.onHistoryClick}>
-                                  <?xml version="1.0" encoding="UTF-8"?><svg
-                                      width="24px"
-                                      height="24px"
-                                      stroke-width="1.7"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      color="currentColor"
-                                  >
-                                      <path
-                                          d="M12 21V7C12 5.89543 12.8954 5 14 5H21.4C21.7314 5 22 5.26863 22 5.6V18.7143"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                      ></path>
-                                      <path
-                                          d="M12 21V7C12 5.89543 11.1046 5 10 5H2.6C2.26863 5 2 5.26863 2 5.6V18.7143"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                      ></path>
-                                      <path d="M14 19L22 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
-                                      <path d="M10 19L2 19" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
-                                      <path
-                                          d="M12 21C12 19.8954 12.8954 19 14 19"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                          stroke-linejoin="round"
-                                      ></path>
-                                      <path
-                                          d="M12 21C12 19.8954 11.1046 19 10 19"
-                                          stroke="currentColor"
-                                          stroke-width="1.7"
-                                          stroke-linecap="round"
-                                          stroke-linejoin="round"
-                                      ></path>
-                                  </svg>
-                              </button>
                               ${this.advancedMode
                                   ? html`
-                                        <button class="icon-button" @click=${this.onAdvancedClick} title="Advanced Tools">
+                                        <button class="icon-button" @click=${this.onAdvancedClick}>
                                             <?xml version="1.0" encoding="UTF-8"?><svg
                                                 width="24px"
                                                 stroke-width="1.7"
@@ -364,6 +395,10 @@ export class AppHeader extends LitElement {
                               <button @click=${this.onHideToggleClick} class="button">
                                   Hide&nbsp;&nbsp;<span class="key" style="pointer-events: none;">${cheddar.isMacOS ? 'Cmd' : 'Ctrl'}</span
                                   >&nbsp;&nbsp;<span class="key">&bsol;</span>
+                              </button>
+                              <button @click=${this.onRestartClick} class="button">
+                                  Restart session&nbsp;&nbsp;<span class="key" style="pointer-events: none;">${cheddar.isMacOS ? 'Cmd' : 'Ctrl'}</span
+                                  >+<span class="key" style="pointer-events: none;">Alt</span>+<span class="key">R</span>
                               </button>
                               <button @click=${this.onCloseClick} class="icon-button window-close">
                                   <?xml version="1.0" encoding="UTF-8"?><svg
