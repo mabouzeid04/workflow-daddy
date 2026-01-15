@@ -706,12 +706,6 @@ ipcRenderer.on('save-screen-analysis', async (event, data) => {
     }
 });
 
-// Listen for emergency erase command from main process
-ipcRenderer.on('clear-sensitive-data', async () => {
-    console.log('Clearing all data...');
-    await storage.clearAll();
-});
-
 // Handle shortcuts based on current view
 function handleShortcut(shortcutKey) {
     const currentView = cheatingDaddy.getCurrentView();
