@@ -20,6 +20,10 @@ A real-time AI assistant that provides contextual help during video calls, inter
 
 - **Live AI Assistance**: Real-time help powered by Google Gemini 2.0 Flash Live
 - **Screen & Audio Capture**: Analyzes what you see and hear for contextual responses
+- **Screen Capture Service**: Automatic screenshot capture and application tracking
+- **Session Management**: Organize captured data by sessions with metadata
+- **Application Tracking**: Monitor active applications and window titles
+- **Browser URL Tracking**: Capture URLs from supported browsers (with privacy options)
 - **Multiple Profiles**: Interview, Sales Call, Business Meeting, Presentation, Negotiation
 - **Transparent Overlay**: Always-on-top window that can be positioned anywhere
 - **Click-through Mode**: Make window transparent to clicks when needed
@@ -51,6 +55,41 @@ A real-time AI assistant that provides contextual help during video calls, inter
 - **macOS**: [SystemAudioDump](https://github.com/Mohammed-Yasin-Mulla/Sound) for system audio
 - **Windows**: Loopback audio capture
 - **Linux**: Microphone input
+
+## Screen Capture
+
+The app includes a comprehensive screen capture service that automatically captures screenshots and tracks application usage during sessions.
+
+### Features
+
+- **Automatic Screenshots**: Configurable interval-based screenshot capture
+- **Application Tracking**: Monitors active applications and window titles
+- **Browser Integration**: Captures URLs from supported browsers (Safari, Chrome, Firefox, Edge, etc.)
+- **Privacy Controls**: Option to limit URL tracking to domain-only
+- **Session Organization**: All captured data organized by session ID
+- **Cross-platform Support**: Native implementations for macOS, Windows, and Linux
+
+### Configuration
+
+Screen capture settings can be configured through the app interface:
+
+- **Screenshot Interval**: Time between captures (default: 10 seconds)
+- **Image Quality**: JPEG compression quality (default: 0.7)
+- **Monitor Selection**: Capture primary monitor or all monitors
+- **URL Tracking**: Enable/disable browser URL capture
+- **Privacy Mode**: Full URLs or domain-only for privacy
+
+### Supported Browsers
+
+- **macOS**: Safari, Google Chrome, Firefox, Microsoft Edge, Brave Browser, Arc
+- **Windows**: URL tracking via window titles (limited support)
+- **Linux**: URL tracking via window titles (limited support)
+
+### Data Storage
+
+Captured data is stored locally in the app's configuration directory:
+- Screenshots: `~/Library/Application Support/cheating-daddy-config/sessions/{sessionId}/screenshots/`
+- Metadata: JSON files containing screenshot metadata and application usage records
 
 ## Requirements
 

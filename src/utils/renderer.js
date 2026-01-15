@@ -102,6 +102,72 @@ const storage = {
     }
 };
 
+// ============ CAPTURE API ============
+// Wrapper for capture-related IPC calls
+const captureApi = {
+    // Capture Config
+    async getConfig() {
+        const result = await ipcRenderer.invoke('capture:get-config');
+        return result.success ? result.data : {};
+    },
+    async setConfig(config) {
+        return ipcRenderer.invoke('capture:set-config', config);
+    },
+    async updateConfig(key, value) {
+        return ipcRenderer.invoke('capture:update-config', key, value);
+    },
+
+    // Capture Service
+    async start(sessionId, config) {
+        return ipcRenderer.invoke('capture:start', sessionId, config);
+    },
+    async stop() {
+        return ipcRenderer.invoke('capture:stop');
+    },
+    async getState() {
+        const result = await ipcRenderer.invoke('capture:get-state');
+        return result.success ? result.data : { isCapturing: false };
+    },
+
+    // Active Window
+    async getActiveWindow() {
+        const result = await ipcRenderer.invoke('capture:get-active-window');
+        return result.success ? result.data : { app: 'Unknown', title: 'Unknown' };
+    },
+
+    // Screenshot Metadata
+    async saveScreenshotMetadata(sessionId, metadata) {
+        return ipcRenderer.invoke('capture:save-screenshot-metadata', sessionId, metadata);
+    },
+    async getSessionScreenshots(sessionId) {
+        const result = await ipcRenderer.invoke('capture:get-session-screenshots', sessionId);
+        return result.success ? result.data : [];
+    },
+
+    // App Usage
+    async saveAppUsage(sessionId, record) {
+        return ipcRenderer.invoke('capture:save-app-usage', sessionId, record);
+    },
+    async getAppUsage(sessionId) {
+        const result = await ipcRenderer.invoke('capture:get-app-usage', sessionId);
+        return result.success ? result.data : [];
+    },
+
+    // Event listeners
+    onScreenshotCaptured(callback) {
+        ipcRenderer.on('capture:screenshot-captured', (event, metadata) => callback(metadata));
+    },
+    onAppSwitched(callback) {
+        ipcRenderer.on('capture:app-switched', (event, data) => callback(data));
+    },
+    onCaptureStarted(callback) {
+        ipcRenderer.on('capture:started', (event, data) => callback(data));
+    },
+    onCaptureStopped(callback) {
+        ipcRenderer.on('capture:stopped', (event, data) => callback(data));
+    }
+};
+
 // Cache for preferences to avoid async calls in hot paths
 let preferencesCache = null;
 
@@ -937,6 +1003,9 @@ const cheatingDaddy = {
 
     // Storage API
     storage,
+
+    // Capture API
+    capture: captureApi,
 
     // Theme API
     theme,

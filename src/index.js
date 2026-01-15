@@ -6,6 +6,7 @@ const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const { createWindow, updateGlobalShortcuts } = require('./utils/window');
 const { setupGeminiIpcHandlers, sendToRenderer } = require('./utils/gemini');
 const storage = require('./storage');
+const capture = require('./utils/capture');
 
 const geminiSessionRef = { current: null };
 let mainWindow = null;
@@ -22,6 +23,7 @@ app.whenReady().then(async () => {
     createMainWindow();
     setupGeminiIpcHandlers(geminiSessionRef);
     setupStorageIpcHandlers();
+    setupCaptureIpcHandlers();
     setupGeneralIpcHandlers();
 });
 
@@ -32,7 +34,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-    // App cleanup if needed
+    // Stop capture service if running
+    capture.stopCapture();
 });
 
 app.on('activate', () => {
@@ -218,6 +221,155 @@ function setupStorageIpcHandlers() {
         } catch (error) {
             console.error('Error clearing all data:', error);
             return { success: false, error: error.message };
+        }
+    });
+}
+
+function setupCaptureIpcHandlers() {
+    // ============ CAPTURE CONFIG ============
+    ipcMain.handle('capture:get-config', async () => {
+        try {
+            return { success: true, data: storage.getCaptureConfig() };
+        } catch (error) {
+            console.error('Error getting capture config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('capture:set-config', async (event, config) => {
+        try {
+            storage.setCaptureConfig(config);
+            capture.updateCaptureConfig(config);
+            return { success: true };
+        } catch (error) {
+            console.error('Error setting capture config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('capture:update-config', async (event, key, value) => {
+        try {
+            storage.updateCaptureConfig(key, value);
+            capture.updateCaptureConfig({ [key]: value });
+            return { success: true };
+        } catch (error) {
+            console.error('Error updating capture config:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ============ CAPTURE SERVICE ============
+    ipcMain.handle('capture:start', async (event, sessionId, config) => {
+        try {
+            const captureConfig = config || storage.getCaptureConfig();
+            capture.startCapture(sessionId, captureConfig);
+            return { success: true };
+        } catch (error) {
+            console.error('Error starting capture:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('capture:stop', async () => {
+        try {
+            capture.stopCapture();
+            return { success: true };
+        } catch (error) {
+            console.error('Error stopping capture:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('capture:get-state', async () => {
+        try {
+            return { success: true, data: capture.getCaptureState() };
+        } catch (error) {
+            console.error('Error getting capture state:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ============ ACTIVE WINDOW ============
+    ipcMain.handle('capture:get-active-window', async () => {
+        try {
+            const windowInfo = await capture.getActiveWindow();
+            return { success: true, data: windowInfo };
+        } catch (error) {
+            console.error('Error getting active window:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ============ SCREENSHOT METADATA ============
+    ipcMain.handle('capture:save-screenshot-metadata', async (event, sessionId, metadata) => {
+        try {
+            storage.saveScreenshotMetadata(sessionId, metadata);
+            return { success: true };
+        } catch (error) {
+            console.error('Error saving screenshot metadata:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('capture:get-session-screenshots', async (event, sessionId) => {
+        try {
+            return { success: true, data: storage.getSessionScreenshots(sessionId) };
+        } catch (error) {
+            console.error('Error getting session screenshots:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ============ APP USAGE ============
+    ipcMain.handle('capture:save-app-usage', async (event, sessionId, record) => {
+        try {
+            storage.saveAppUsageRecord(sessionId, record);
+            return { success: true };
+        } catch (error) {
+            console.error('Error saving app usage:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('capture:get-app-usage', async (event, sessionId) => {
+        try {
+            return { success: true, data: storage.getAppUsageRecords(sessionId) };
+        } catch (error) {
+            console.error('Error getting app usage:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ============ CAPTURE EVENTS ============
+    // Forward capture events to renderer
+    capture.captureEvents.on('screenshot:captured', (metadata) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('capture:screenshot-captured', metadata);
+        }
+    });
+
+    capture.captureEvents.on('app:switched', (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('capture:app-switched', data);
+            // Also save the completed app usage record
+            if (data.previous && data.previous.endTime) {
+                const state = capture.getCaptureState();
+                if (state.sessionId) {
+                    storage.saveAppUsageRecord(state.sessionId, data.previous);
+                }
+            }
+        }
+    });
+
+    capture.captureEvents.on('capture:started', (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('capture:started', data);
+        }
+    });
+
+    capture.captureEvents.on('capture:stopped', (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('capture:stopped', data);
         }
     });
 }

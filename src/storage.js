@@ -27,6 +27,15 @@ const DEFAULT_PREFERENCES = {
     backgroundTransparency: 0.8
 };
 
+// Default capture configuration
+const DEFAULT_CAPTURE_CONFIG = {
+    screenshotInterval: 10000, // milliseconds, default 10s
+    imageQuality: 0.7, // 0-1, default 0.7
+    captureAllMonitors: false, // default false (primary only)
+    trackUrls: true, // default true
+    urlPrivacyMode: 'full' // 'full' | 'domain-only'
+};
+
 const DEFAULT_KEYBINDS = null; // null means use system defaults
 
 // Get the config directory path based on OS
@@ -64,6 +73,18 @@ function getKeybindsPath() {
 
 function getHistoryDir() {
     return path.join(getConfigDir(), 'history');
+}
+
+function getCaptureConfigPath() {
+    return path.join(getConfigDir(), 'capture-config.json');
+}
+
+function getSessionsDir() {
+    return path.join(getConfigDir(), 'sessions');
+}
+
+function getSessionScreenshotsDir(sessionId) {
+    return path.join(getSessionsDir(), sessionId, 'screenshots');
 }
 
 // Helper to read JSON file safely
@@ -212,6 +233,69 @@ function setKeybinds(keybinds) {
     return writeJsonFile(getKeybindsPath(), keybinds);
 }
 
+// ============ CAPTURE CONFIG ============
+
+function getCaptureConfig() {
+    const saved = readJsonFile(getCaptureConfigPath(), {});
+    return { ...DEFAULT_CAPTURE_CONFIG, ...saved };
+}
+
+function setCaptureConfig(config) {
+    const current = getCaptureConfig();
+    const updated = { ...current, ...config };
+    return writeJsonFile(getCaptureConfigPath(), updated);
+}
+
+function updateCaptureConfig(key, value) {
+    const config = getCaptureConfig();
+    config[key] = value;
+    return writeJsonFile(getCaptureConfigPath(), config);
+}
+
+// ============ SESSION SCREENSHOTS ============
+
+function ensureSessionScreenshotsDir(sessionId) {
+    const dir = getSessionScreenshotsDir(sessionId);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    return dir;
+}
+
+function getScreenshotMetadataPath(sessionId) {
+    return path.join(getSessionsDir(), sessionId, 'screenshots.json');
+}
+
+function saveScreenshotMetadata(sessionId, metadata) {
+    const metadataPath = getScreenshotMetadataPath(sessionId);
+    const existing = readJsonFile(metadataPath, { screenshots: [] });
+    existing.screenshots.push(metadata);
+    return writeJsonFile(metadataPath, existing);
+}
+
+function getSessionScreenshots(sessionId) {
+    const metadataPath = getScreenshotMetadataPath(sessionId);
+    const data = readJsonFile(metadataPath, { screenshots: [] });
+    return data.screenshots;
+}
+
+function getAppUsageMetadataPath(sessionId) {
+    return path.join(getSessionsDir(), sessionId, 'app-usage.json');
+}
+
+function saveAppUsageRecord(sessionId, record) {
+    const metadataPath = getAppUsageMetadataPath(sessionId);
+    const existing = readJsonFile(metadataPath, { records: [] });
+    existing.records.push(record);
+    return writeJsonFile(metadataPath, existing);
+}
+
+function getAppUsageRecords(sessionId) {
+    const metadataPath = getAppUsageMetadataPath(sessionId);
+    const data = readJsonFile(metadataPath, { records: [] });
+    return data.records;
+}
+
 // ============ HISTORY ============
 
 function getSessionPath(sessionId) {
@@ -341,6 +425,20 @@ module.exports = {
     // Keybinds
     getKeybinds,
     setKeybinds,
+
+    // Capture Config
+    getCaptureConfig,
+    setCaptureConfig,
+    updateCaptureConfig,
+
+    // Session Screenshots
+    getSessionsDir,
+    getSessionScreenshotsDir,
+    ensureSessionScreenshotsDir,
+    saveScreenshotMetadata,
+    getSessionScreenshots,
+    saveAppUsageRecord,
+    getAppUsageRecords,
 
     // History
     saveSession,
