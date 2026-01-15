@@ -203,11 +203,10 @@ async function initializeGeminiSession(apiKey, customPrompt = '', profile = 'int
         httpOptions: { apiVersion: 'v1alpha' },
     });
 
-    // Get enabled tools first to determine Google Search status
+    // Get enabled tools
     const enabledTools = await getEnabledTools();
-    const googleSearchEnabled = enabledTools.some(tool => tool.googleSearch);
 
-    const systemPrompt = getSystemPrompt(profile, customPrompt, googleSearchEnabled);
+    const systemPrompt = getSystemPrompt(profile, customPrompt);
 
     // Initialize new conversation session only on first connect
     if (!isReconnect) {
