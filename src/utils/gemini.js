@@ -1,7 +1,7 @@
 const { GoogleGenAI, Modality } = require('@google/genai');
 const { BrowserWindow, ipcMain } = require('electron');
 const { getSystemPrompt } = require('./prompts');
-const { getAvailableModel, incrementLimitCount, getApiKey } = require('../storage');
+const { getApiKey } = require('../storage');
 
 // Conversation tracking variables
 let currentSessionId = null;
@@ -366,8 +366,8 @@ async function attemptReconnect() {
 }
 
 async function sendImageToGeminiHttp(base64Data, prompt) {
-    // Get available model based on rate limits
-    const model = getAvailableModel();
+    // Use gemini flash for image analysis
+    const model = 'gemini-2.5-flash';
 
     const apiKey = getApiKey();
     if (!apiKey) {
@@ -392,9 +392,6 @@ async function sendImageToGeminiHttp(base64Data, prompt) {
             model: model,
             contents: contents,
         });
-
-        // Increment count after successful call
-        incrementLimitCount(model);
 
         // Stream the response
         let fullText = '';
