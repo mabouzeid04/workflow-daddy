@@ -131,19 +131,8 @@ function getCurrentSessionData() {
 }
 
 async function getEnabledTools() {
+    // No additional tools enabled for workflow observation
     const tools = [];
-
-    // Check if Google Search is enabled (default: true)
-    const googleSearchEnabled = await getStoredSetting('googleSearchEnabled', 'true');
-    console.log('Google Search enabled:', googleSearchEnabled);
-
-    if (googleSearchEnabled === 'true') {
-        tools.push({ googleSearch: {} });
-        console.log('Added Google Search tool');
-    } else {
-        console.log('Google Search tool disabled');
-    }
-
     return tools;
 }
 
@@ -522,18 +511,6 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
             return { success: true, sessionId: currentSessionId };
         } catch (error) {
             console.error('Error starting new session:', error);
-            return { success: false, error: error.message };
-        }
-    });
-
-    ipcMain.handle('update-google-search-setting', async (event, enabled) => {
-        try {
-            console.log('Google Search setting updated to:', enabled);
-            // The setting is already saved in localStorage by the renderer
-            // This is just for logging/confirmation
-            return { success: true };
-        } catch (error) {
-            console.error('Error updating Google Search setting:', error);
             return { success: false, error: error.message };
         }
     });
