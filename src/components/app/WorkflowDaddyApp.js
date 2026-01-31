@@ -4,10 +4,14 @@ import { MainView } from '../views/MainView.js';
 import { CustomizeView } from '../views/CustomizeView.js';
 import { HelpView } from '../views/HelpView.js';
 import { HistoryView } from '../views/HistoryView.js';
-import { AssistantView } from '../views/AssistantView.js';
 import { OnboardingView } from '../views/OnboardingView.js';
+import { ObservationView } from '../views/ObservationView.js';
+import { InterviewView } from '../views/InterviewView.js';
+import { TransitionView } from '../views/TransitionView.js';
+import { DocumentationPreviewView } from '../views/DocumentationPreviewView.js';
+import { QuestionOverlay } from '../overlays/QuestionOverlay.js';
 
-export class CheatingDaddyApp extends LitElement {
+export class WorkflowDaddyApp extends LitElement {
     static styles = css`
         * {
             box-sizing: border-box;
@@ -49,10 +53,6 @@ export class CheatingDaddyApp extends LitElement {
             border-top: none;
         }
 
-        .main-content.assistant-view {
-            padding: 12px;
-        }
-
         .main-content.onboarding-view {
             padding: 0;
             background: transparent;
@@ -62,6 +62,11 @@ export class CheatingDaddyApp extends LitElement {
         .main-content.help-view,
         .main-content.history-view {
             padding: 0;
+        }
+
+        .main-content.observation-view {
+            padding: 0;
+            overflow: hidden;
         }
 
         .view-container {
@@ -105,11 +110,15 @@ export class CheatingDaddyApp extends LitElement {
         selectedScreenshotInterval: { type: String },
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
+        windowMode: { type: String },
+        isPaused: { type: Boolean },
+        currentTask: { type: String },
         _viewInstances: { type: Object, state: true },
         _isClickThrough: { state: true },
         _awaitingNewResponse: { state: true },
         shouldAnimateResponse: { type: Boolean },
         _storageLoaded: { state: true },
+        _previousView: { state: true },
     };
 
     constructor() {
@@ -125,6 +134,9 @@ export class CheatingDaddyApp extends LitElement {
         this.selectedScreenshotInterval = '5';
         this.selectedImageQuality = 'medium';
         this.layoutMode = 'normal';
+        this.windowMode = 'hub';
+        this.isPaused = false;
+        this.currentTask = '';
         this.responses = [];
         this.currentResponseIndex = -1;
         this._viewInstances = new Map();
@@ -141,8 +153,8 @@ export class CheatingDaddyApp extends LitElement {
     async _loadFromStorage() {
         try {
             const [config, prefs] = await Promise.all([
-                cheatingDaddy.storage.getConfig(),
-                cheatingDaddy.storage.getPreferences()
+                workflowDaddy.storage.getConfig(),
+                workflowDaddy.storage.getPreferences()
             ]);
 
             // Check onboarding status
@@ -238,6 +250,60 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.on('reconnect-failed', (_, data) => {
                 this.addNewResponse(data.message);
             });
+
+            // Mode switching
+            ipcRenderer.on('mode:change', (_, mode) => {
+                this.windowMode = mode;
+                if (mode === 'observation') {
+                    this.currentView = 'observation';
+                }
+            });
+
+            // Navigate to settings (from tray or Cmd+, shortcut)
+            ipcRenderer.on('navigate-to-settings', () => {
+                this.currentView = 'customize';
+                this.requestUpdate();
+            });
+
+            // Tray pause/resume events
+            ipcRenderer.on('tray:pause-recording', async () => {
+                try {
+                    await ipcRenderer.invoke('session:pause', 'user_requested');
+                    this.isPaused = true;
+                } catch (error) {
+                    console.error('Error pausing from tray:', error);
+                }
+            });
+
+            ipcRenderer.on('tray:resume-recording', async () => {
+                try {
+                    const sessionResult = await ipcRenderer.invoke('session:get-current');
+                    if (sessionResult.success && sessionResult.data) {
+                        await ipcRenderer.invoke('session:resume', sessionResult.data.id);
+                        this.isPaused = false;
+                    }
+                } catch (error) {
+                    console.error('Error resuming from tray:', error);
+                }
+            });
+
+            // Tray export docs
+            ipcRenderer.on('tray:export-docs', async () => {
+                try {
+                    const profileId = this.selectedProfile;
+                    await ipcRenderer.invoke('documentation:generate', profileId);
+                } catch (error) {
+                    console.error('Error exporting docs from tray:', error);
+                }
+            });
+
+            // Task detection events for observation view
+            ipcRenderer.on('taskdetection:task-started', (_, task) => {
+                this.currentTask = task.name || 'New task';
+            });
+            ipcRenderer.on('taskdetection:task-named', (_, task) => {
+                this.currentTask = task.name || this.currentTask;
+            });
         }
     }
 
@@ -250,6 +316,13 @@ export class CheatingDaddyApp extends LitElement {
             ipcRenderer.removeAllListeners('update-status');
             ipcRenderer.removeAllListeners('click-through-toggled');
             ipcRenderer.removeAllListeners('reconnect-failed');
+            ipcRenderer.removeAllListeners('mode:change');
+            ipcRenderer.removeAllListeners('navigate-to-settings');
+            ipcRenderer.removeAllListeners('tray:pause-recording');
+            ipcRenderer.removeAllListeners('tray:resume-recording');
+            ipcRenderer.removeAllListeners('tray:export-docs');
+            ipcRenderer.removeAllListeners('taskdetection:task-started');
+            ipcRenderer.removeAllListeners('taskdetection:task-named');
         }
     }
 
@@ -300,20 +373,9 @@ export class CheatingDaddyApp extends LitElement {
         this.requestUpdate();
     }
 
-        async handleClose() {
+    async handleClose() {
         if (this.currentView === 'customize' || this.currentView === 'help' || this.currentView === 'history') {
             this.currentView = 'main';
-        } else if (this.currentView === 'assistant') {
-            cheatingDaddy.stopCapture();
-
-            // Close the session
-            if (window.require) {
-                const { ipcRenderer } = window.require('electron');
-                await ipcRenderer.invoke('close-session');
-            }
-            this.sessionActive = false;
-            this.currentView = 'main';
-            console.log('Session closed');
         } else {
             // Quit the entire application
             if (window.require) {
@@ -333,7 +395,7 @@ export class CheatingDaddyApp extends LitElement {
     // Main view event handlers
     async handleStart() {
         // check if api key is empty do nothing
-        const apiKey = await cheatingDaddy.storage.getApiKey();
+        const apiKey = await workflowDaddy.storage.getApiKey();
         if (!apiKey || apiKey === '') {
             // Trigger the red blink animation on the API key input
             const mainView = this.shadowRoot.querySelector('main-view');
@@ -343,46 +405,139 @@ export class CheatingDaddyApp extends LitElement {
             return;
         }
 
-        await cheatingDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
-        // Pass the screenshot interval as string (including 'manual' option)
-        cheatingDaddy.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+        // Check if interview profile and not yet completed
+        if (this.selectedProfile === 'interview') {
+            const hasCompleted = await workflowDaddy.interview.hasCompleted(this.selectedProfile);
+            if (!hasCompleted) {
+                this.currentView = 'interview';
+                return;
+            }
+        }
+
+        // Start observation mode (interview already completed or different profile)
+        await this._startObservationMode();
+    }
+
+    async _startObservationMode() {
+        // Initialize Gemini
+        await workflowDaddy.initializeGemini(this.selectedProfile, this.selectedLanguage);
+
+        // Start session (automatically loads interview summary as baseline if available)
+        const session = await workflowDaddy.session.start(this.selectedProfile);
+
+        // Start screen capture
+        workflowDaddy.startCapture(this.selectedScreenshotInterval, this.selectedImageQuality);
+
+        // Reset response tracking
         this.responses = [];
         this.currentResponseIndex = -1;
         this.startTime = Date.now();
-        this.currentView = 'assistant';
+
+        // Switch to observation view
+        this.currentView = 'observation';
+    }
+
+    handleInterviewComplete(event) {
+        console.log('Interview completed:', event.detail);
+        // Show transition view explaining what happens next
+        this.currentView = 'transition';
+    }
+
+    async handleStartObserving() {
+        // Start observation mode and minimize to tray
+        await this._startObservationMode();
+
+        // Minimize window to tray
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.send('minimize-to-tray');
+        }
+    }
+
+    async handleAddMoreContext() {
+        // Re-open interview view to add more context
+        this.currentView = 'interview';
     }
 
     async handleAPIKeyHelp() {
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
-            await ipcRenderer.invoke('open-external', 'https://cheatingdaddy.com/help/api-key');
+            await ipcRenderer.invoke('open-external', 'https://workflowdaddy.com/help/api-key');
         }
     }
 
     // Customize view event handlers
     async handleProfileChange(profile) {
         this.selectedProfile = profile;
-        await cheatingDaddy.storage.updatePreference('selectedProfile', profile);
+        await workflowDaddy.storage.updatePreference('selectedProfile', profile);
     }
 
     async handleLanguageChange(language) {
         this.selectedLanguage = language;
-        await cheatingDaddy.storage.updatePreference('selectedLanguage', language);
+        await workflowDaddy.storage.updatePreference('selectedLanguage', language);
     }
 
     async handleScreenshotIntervalChange(interval) {
         this.selectedScreenshotInterval = interval;
-        await cheatingDaddy.storage.updatePreference('selectedScreenshotInterval', interval);
+        await workflowDaddy.storage.updatePreference('selectedScreenshotInterval', interval);
     }
 
     async handleImageQualityChange(quality) {
         this.selectedImageQuality = quality;
-        await cheatingDaddy.storage.updatePreference('selectedImageQuality', quality);
+        await workflowDaddy.storage.updatePreference('selectedImageQuality', quality);
     }
 
     handleBackClick() {
-        this.currentView = 'main';
+        // If we were in observation mode and user goes to settings, going back should return to observation
+        if (this.windowMode === 'observation' || this.windowMode === 'hub') {
+            this.currentView = 'main';
+        } else {
+            this.currentView = 'main';
+        }
         this.requestUpdate();
+    }
+
+    async handleSwitchToObservation() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('window:switch-mode', 'observation');
+        }
+    }
+
+    async handleObservationHide() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('window:switch-mode', 'hidden');
+        }
+    }
+
+    async handleObservationSettings() {
+        // Switch back to hub mode to show settings
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('window:switch-mode', 'hub');
+        }
+        this.currentView = 'customize';
+        this.requestUpdate();
+    }
+
+    async handleObservationPause() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('session:pause', 'user_requested');
+            this.isPaused = true;
+        }
+    }
+
+    async handleObservationResume() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            const sessionResult = await ipcRenderer.invoke('session:get-current');
+            if (sessionResult.success && sessionResult.data) {
+                await ipcRenderer.invoke('session:resume', sessionResult.data.id);
+                this.isPaused = false;
+            }
+        }
     }
 
     // Help view event handlers
@@ -393,22 +548,16 @@ export class CheatingDaddyApp extends LitElement {
         }
     }
 
-    // Assistant view event handlers
-    async handleSendText(message) {
-        const result = await window.cheatingDaddy.sendTextMessage(message);
-
-        if (!result.success) {
-            console.error('Failed to send message:', result.error);
-            this.setStatus('Error sending message: ' + result.error);
-        } else {
-            this.setStatus('Message sent...');
-            this._awaitingNewResponse = true;
-        }
+    // Documentation preview handlers
+    handleDocumentationPreview() {
+        this._previousView = this.currentView;
+        this.currentView = 'documentation-preview';
+        this.requestUpdate();
     }
 
-    handleResponseIndexChanged(e) {
-        this.currentResponseIndex = e.detail.index;
-        this.shouldAnimateResponse = false;
+    handleBackFromPreview() {
+        this.currentView = this._previousView || 'main';
+        this._previousView = null;
         this.requestUpdate();
     }
 
@@ -450,6 +599,21 @@ export class CheatingDaddyApp extends LitElement {
                     <onboarding-view .onComplete=${() => this.handleOnboardingComplete()} .onClose=${() => this.handleClose()}></onboarding-view>
                 `;
 
+            case 'interview':
+                return html`
+                    <interview-view
+                        .onComplete=${(data) => this.handleInterviewComplete(data)}
+                        @interview-complete=${e => this.handleInterviewComplete(e)}
+                    ></interview-view>
+                `;
+
+            case 'transition':
+                return html`
+                    <transition-view
+                        .onStart=${() => this.handleStartObserving()}
+                    ></transition-view>
+                `;
+
             case 'main':
                 return html`
                     <main-view
@@ -479,24 +643,33 @@ export class CheatingDaddyApp extends LitElement {
                 return html` <help-view .onExternalLinkClick=${url => this.handleExternalLinkClick(url)}></help-view> `;
 
             case 'history':
-                return html` <history-view></history-view> `;
-
-            case 'assistant':
                 return html`
-                    <assistant-view
-                        .responses=${this.responses}
-                        .currentResponseIndex=${this.currentResponseIndex}
-                        .selectedProfile=${this.selectedProfile}
-                        .onSendText=${message => this.handleSendText(message)}
-                        .shouldAnimateResponse=${this.shouldAnimateResponse}
-                        @response-index-changed=${this.handleResponseIndexChanged}
-                        @response-animation-complete=${() => {
-                            this.shouldAnimateResponse = false;
-                            this._currentResponseIsComplete = true;
-                            console.log('[response-animation-complete] Marked current response as complete');
-                            this.requestUpdate();
-                        }}
-                    ></assistant-view>
+                    <history-view
+                        .onPreview=${() => this.handleDocumentationPreview()}
+                    ></history-view>
+                `;
+
+            case 'observation':
+                return html`
+                    <observation-view
+                        .isRecording=${this.sessionActive}
+                        .isPaused=${this.isPaused}
+                        .startTime=${this.startTime}
+                        .currentTask=${this.currentTask}
+                        .onHide=${() => this.handleObservationHide()}
+                        .onSettings=${() => this.handleObservationSettings()}
+                        .onPause=${() => this.handleObservationPause()}
+                        .onResume=${() => this.handleObservationResume()}
+                        .onPreview=${() => this.handleDocumentationPreview()}
+                    ></observation-view>
+                `;
+
+            case 'documentation-preview':
+                return html`
+                    <documentation-preview-view
+                        .profileId=${this.selectedProfile}
+                        .onBack=${() => this.handleBackFromPreview()}
+                    ></documentation-preview-view>
                 `;
 
             default:
@@ -506,33 +679,40 @@ export class CheatingDaddyApp extends LitElement {
 
     render() {
         const viewClassMap = {
-            'assistant': 'assistant-view',
             'onboarding': 'onboarding-view',
             'customize': 'settings-view',
             'help': 'help-view',
             'history': 'history-view',
+            'observation': 'observation-view',
+            'documentation-preview': 'history-view',
         };
         const mainContentClass = `main-content ${viewClassMap[this.currentView] || 'with-border'}`;
+
+        const showHeader = this.currentView !== 'observation';
 
         return html`
             <div class="window-container">
                 <div class="container">
-                    <app-header
-                        .currentView=${this.currentView}
-                        .statusText=${this.statusText}
-                        .startTime=${this.startTime}
-                        .onCustomizeClick=${() => this.handleCustomizeClick()}
-                        .onHelpClick=${() => this.handleHelpClick()}
-                        .onHistoryClick=${() => this.handleHistoryClick()}
-                        .onCloseClick=${() => this.handleClose()}
-                        .onBackClick=${() => this.handleBackClick()}
-                        .onHideToggleClick=${() => this.handleHideToggle()}
-                        ?isClickThrough=${this._isClickThrough}
-                    ></app-header>
+                    ${showHeader ? html`
+                        <app-header
+                            .currentView=${this.currentView}
+                            .statusText=${this.statusText}
+                            .startTime=${this.startTime}
+                            .onCustomizeClick=${() => this.handleCustomizeClick()}
+                            .onHelpClick=${() => this.handleHelpClick()}
+                            .onHistoryClick=${() => this.handleHistoryClick()}
+                            .onCloseClick=${() => this.handleClose()}
+                            .onBackClick=${() => this.handleBackClick()}
+                            .onHideToggleClick=${() => this.handleHideToggle()}
+                            ?isClickThrough=${this._isClickThrough}
+                        ></app-header>
+                    ` : ''}
                     <div class="${mainContentClass}">
                         <div class="view-container">${this.renderCurrentView()}</div>
                     </div>
                 </div>
+                <!-- Question Overlay for confusion detection -->
+                <question-overlay></question-overlay>
             </div>
         `;
     }
@@ -548,7 +728,7 @@ export class CheatingDaddyApp extends LitElement {
 
     async handleLayoutModeChange(layoutMode) {
         this.layoutMode = layoutMode;
-        await cheatingDaddy.storage.updateConfig('layout', layoutMode);
+        await workflowDaddy.storage.updateConfig('layout', layoutMode);
         this.updateLayoutMode();
 
         // Notify main process about layout change for window resizing
@@ -565,4 +745,4 @@ export class CheatingDaddyApp extends LitElement {
     }
 }
 
-customElements.define('cheating-daddy-app', CheatingDaddyApp);
+customElements.define('workflow-daddy-app', WorkflowDaddyApp);

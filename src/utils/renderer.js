@@ -3,13 +3,6 @@ const { ipcRenderer } = require('electron');
 
 let mediaStream = null;
 let screenshotInterval = null;
-let audioContext = null;
-let audioProcessor = null;
-let micAudioProcessor = null;
-let audioBuffer = [];
-const SAMPLE_RATE = 24000;
-const AUDIO_CHUNK_DURATION = 0.1; // seconds
-const BUFFER_SIZE = 4096; // Increased buffer size for smoother audio
 
 let hiddenVideo = null;
 let offscreenCanvas = null;
@@ -168,6 +161,404 @@ const captureApi = {
     }
 };
 
+// ============ INTERVIEW API ============
+// Wrapper for interview-related IPC calls
+const interviewApi = {
+    // Session management
+    async start(profileId) {
+        const result = await ipcRenderer.invoke('interview:start', profileId);
+        return result.success ? result.data : null;
+    },
+    async sendMessage(userMessage) {
+        const result = await ipcRenderer.invoke('interview:send-message', userMessage);
+        return result.success ? result.data : null;
+    },
+    async skipQuestion() {
+        const result = await ipcRenderer.invoke('interview:skip-question');
+        return result.success ? result.data : null;
+    },
+    async complete() {
+        const result = await ipcRenderer.invoke('interview:complete');
+        return result.success ? result.data : null;
+    },
+    async getCurrentSession() {
+        const result = await ipcRenderer.invoke('interview:get-current-session');
+        return result.success ? result.data : null;
+    },
+    async resume(profileId) {
+        const result = await ipcRenderer.invoke('interview:resume', profileId);
+        return result.success ? result.data : null;
+    },
+    async clear() {
+        return ipcRenderer.invoke('interview:clear');
+    },
+
+    // Storage
+    async getSession(profileId) {
+        const result = await ipcRenderer.invoke('interview:get-session', profileId);
+        return result.success ? result.data : null;
+    },
+    async getSummary(profileId) {
+        const result = await ipcRenderer.invoke('interview:get-summary', profileId);
+        return result.success ? result.data : null;
+    },
+    async hasCompleted(profileId) {
+        const result = await ipcRenderer.invoke('interview:has-completed', profileId);
+        return result.success ? result.data : false;
+    },
+
+    // Event listeners
+    onStarted(callback) {
+        ipcRenderer.on('interview:started', (event, data) => callback(data));
+    },
+    onMessage(callback) {
+        ipcRenderer.on('interview:message', (event, message) => callback(message));
+    },
+    onCompleted(callback) {
+        ipcRenderer.on('interview:completed', (event, data) => callback(data));
+    },
+    onReadyForObservation(callback) {
+        ipcRenderer.on('interview:ready-for-observation', (event, data) => callback(data));
+    }
+};
+
+// ============ PROFILES API ============
+// Wrapper for profile-related IPC calls
+const profilesApi = {
+    async getAll() {
+        const result = await ipcRenderer.invoke('profiles:get-all');
+        return result.success ? result.data : [];
+    },
+    async delete(profileId) {
+        return ipcRenderer.invoke('profiles:delete', profileId);
+    }
+};
+
+// ============ CONFUSION API ============
+// Wrapper for confusion detection IPC calls
+const confusionApi = {
+    // Lifecycle
+    async init(sessionId, config) {
+        const result = await ipcRenderer.invoke('confusion:init', sessionId, config);
+        return result.success ? result.data : null;
+    },
+    async clear() {
+        return ipcRenderer.invoke('confusion:clear');
+    },
+
+    // Analysis
+    async analyze(screenshotImages) {
+        const result = await ipcRenderer.invoke('confusion:analyze', screenshotImages);
+        return result.success ? result.data : null;
+    },
+    async runCheck(screenshotImages) {
+        const result = await ipcRenderer.invoke('confusion:run-check', screenshotImages);
+        return result.success ? result.data : null;
+    },
+
+    // Rate Limiting
+    async canAsk(sessionId) {
+        const result = await ipcRenderer.invoke('confusion:can-ask', sessionId);
+        return result.success ? result.data : false;
+    },
+    async getQuestionCount(sessionId, windowMinutes) {
+        const result = await ipcRenderer.invoke('confusion:get-question-count', sessionId, windowMinutes);
+        return result.success ? result.data : 0;
+    },
+
+    // Question Management
+    async answerQuestion(questionId, answer) {
+        const result = await ipcRenderer.invoke('confusion:answer-question', questionId, answer);
+        return result.success ? result.data : null;
+    },
+    async dismissQuestion(questionId) {
+        const result = await ipcRenderer.invoke('confusion:dismiss-question', questionId);
+        return result.success ? result.data : null;
+    },
+    async deferQuestion(questionId) {
+        const result = await ipcRenderer.invoke('confusion:defer-question', questionId);
+        return result.success ? result.data : null;
+    },
+    async getCurrentQuestion() {
+        const result = await ipcRenderer.invoke('confusion:get-current-question');
+        return result.success ? result.data : null;
+    },
+    async getPendingQuestions() {
+        const result = await ipcRenderer.invoke('confusion:get-pending-questions');
+        return result.success ? result.data : [];
+    },
+    async getDeferredQuestions() {
+        const result = await ipcRenderer.invoke('confusion:get-deferred-questions');
+        return result.success ? result.data : [];
+    },
+    async getSessionQuestions() {
+        const result = await ipcRenderer.invoke('confusion:get-session-questions');
+        return result.success ? result.data : [];
+    },
+    async getQAForDocs() {
+        const result = await ipcRenderer.invoke('confusion:get-qa-for-docs');
+        return result.success ? result.data : [];
+    },
+
+    // Event listeners
+    onQuestionCreated(callback) {
+        ipcRenderer.on('confusion:question-created', (event, question) => callback(question));
+    },
+    onQuestionAnswered(callback) {
+        ipcRenderer.on('confusion:question-answered', (event, question) => callback(question));
+    },
+    onQuestionDismissed(callback) {
+        ipcRenderer.on('confusion:question-dismissed', (event, question) => callback(question));
+    },
+    onQuestionDeferred(callback) {
+        ipcRenderer.on('confusion:question-deferred', (event, question) => callback(question));
+    }
+};
+
+// ============ CONTEXT API ============
+// Wrapper for context management IPC calls
+const contextApi = {
+    // Session Lifecycle
+    async startSession(sessionId, profileId) {
+        const result = await ipcRenderer.invoke('context:start-session', sessionId, profileId);
+        return result.success ? result.data : null;
+    },
+    async endSession() {
+        const result = await ipcRenderer.invoke('context:end-session');
+        return result.success ? result.data : null;
+    },
+    async clear() {
+        return ipcRenderer.invoke('context:clear');
+    },
+
+    // Immediate Context
+    async updateImmediate(screenshot) {
+        const result = await ipcRenderer.invoke('context:update-immediate', screenshot);
+        return result.success ? result.data : null;
+    },
+    async getImmediate() {
+        const result = await ipcRenderer.invoke('context:get-immediate');
+        return result.success ? result.data : null;
+    },
+
+    // Session Context
+    async updateSession(observationEvent) {
+        const result = await ipcRenderer.invoke('context:update-session', observationEvent);
+        return result.success ? result.data : null;
+    },
+    async getSession() {
+        const result = await ipcRenderer.invoke('context:get-session');
+        return result.success ? result.data : null;
+    },
+    async addQuestion(question) {
+        return ipcRenderer.invoke('context:add-question', question);
+    },
+    async wasQuestionAsked(question) {
+        const result = await ipcRenderer.invoke('context:was-question-asked', question);
+        return result.success ? result.data : false;
+    },
+    async updateTaskTheory(theory) {
+        return ipcRenderer.invoke('context:update-task-theory', theory);
+    },
+
+    // Session Summarization
+    async shouldUpdateSummary() {
+        const result = await ipcRenderer.invoke('context:should-update-summary');
+        return result.success ? result.data : false;
+    },
+    async generateSummary() {
+        const result = await ipcRenderer.invoke('context:generate-summary');
+        return result.success ? result.data : null;
+    },
+
+    // Historical Context
+    async loadHistorical(profileId) {
+        const result = await ipcRenderer.invoke('context:load-historical', profileId);
+        return result.success ? result.data : null;
+    },
+    async getHistorical() {
+        const result = await ipcRenderer.invoke('context:get-historical');
+        return result.success ? result.data : null;
+    },
+    async getRelevantHistory(currentActivity) {
+        const result = await ipcRenderer.invoke('context:get-relevant-history', currentActivity);
+        return result.success ? result.data : '';
+    },
+
+    // Context Assembly
+    async assemble() {
+        const result = await ipcRenderer.invoke('context:assemble');
+        return result.success ? result.data : null;
+    },
+    async getForLLM() {
+        const result = await ipcRenderer.invoke('context:get-for-llm');
+        return result.success ? result.data : '';
+    },
+
+    // Session Summaries
+    async getSessionSummaries(profileId, limit = 10) {
+        const result = await ipcRenderer.invoke('context:get-session-summaries', profileId, limit);
+        return result.success ? result.data : [];
+    },
+
+    // Event listeners
+    onImmediateUpdated(callback) {
+        ipcRenderer.on('context:immediate-updated', (event, data) => callback(data));
+    },
+    onSessionUpdated(callback) {
+        ipcRenderer.on('context:session-updated', (event, data) => callback(data));
+    },
+    onSummaryGenerated(callback) {
+        ipcRenderer.on('context:summary-generated', (event, data) => callback(data));
+    }
+};
+
+// ============ SESSION API ============
+// Wrapper for session management IPC calls
+const sessionApi = {
+    // Initialization
+    async initialize() {
+        const result = await ipcRenderer.invoke('session:initialize');
+        return result.success ? result.data : null;
+    },
+
+    // Profile Management
+    async createProfile(name) {
+        const result = await ipcRenderer.invoke('session:create-profile', name);
+        return result.success ? result.data : null;
+    },
+    async loadProfile(profileId) {
+        const result = await ipcRenderer.invoke('session:load-profile', profileId);
+        return result.success ? result.data : null;
+    },
+    async listProfiles() {
+        const result = await ipcRenderer.invoke('session:list-profiles');
+        return result.success ? result.data : [];
+    },
+    async getCurrentProfile() {
+        const result = await ipcRenderer.invoke('session:get-current-profile');
+        return result.success ? result.data : null;
+    },
+
+    // Session Lifecycle
+    async start(profileId) {
+        const result = await ipcRenderer.invoke('session:start', profileId);
+        return result.success ? result.data : null;
+    },
+    async pause(reason = 'user') {
+        const result = await ipcRenderer.invoke('session:pause', reason);
+        return result.success ? result.data : null;
+    },
+    async resume(sessionId = null) {
+        const result = await ipcRenderer.invoke('session:resume', sessionId);
+        return result.success ? result.data : null;
+    },
+    async end() {
+        const result = await ipcRenderer.invoke('session:end');
+        return result.success ? result.data : null;
+    },
+    async getCurrent() {
+        const result = await ipcRenderer.invoke('session:get-current');
+        return result.success ? result.data : null;
+    },
+    async getStats() {
+        const result = await ipcRenderer.invoke('session:get-stats');
+        return result.success ? result.data : null;
+    },
+
+    // Session Resume (Multi-Day)
+    async canResume(sessionData) {
+        const result = await ipcRenderer.invoke('session:can-resume', sessionData);
+        return result.success ? result.data : false;
+    },
+    async getResumable(profileId) {
+        const result = await ipcRenderer.invoke('session:get-resumable', profileId);
+        return result.success ? result.data : null;
+    },
+
+    // Crash Recovery
+    async checkCrash() {
+        const result = await ipcRenderer.invoke('session:check-crash');
+        return result.success ? result.data : false;
+    },
+    async recoverCrash() {
+        const result = await ipcRenderer.invoke('session:recover-crash');
+        return result.success ? result.data : null;
+    },
+
+    // Activity & Idle
+    async recordActivity() {
+        return ipcRenderer.invoke('session:record-activity');
+    },
+    async detectIdle() {
+        const result = await ipcRenderer.invoke('session:detect-idle');
+        return result.success ? result.data : false;
+    },
+
+    // Session Stats
+    async updateScreenshotCount(count) {
+        return ipcRenderer.invoke('session:update-screenshot-count', count);
+    },
+    async incrementScreenshotCount() {
+        return ipcRenderer.invoke('session:increment-screenshot-count');
+    },
+    async updateTaskCount(count) {
+        return ipcRenderer.invoke('session:update-task-count', count);
+    },
+    async updateQuestionCount(count) {
+        return ipcRenderer.invoke('session:update-question-count', count);
+    },
+
+    // Configuration
+    async getConfig() {
+        const result = await ipcRenderer.invoke('session:get-config');
+        return result.success ? result.data : {};
+    },
+    async updateConfig(updates) {
+        return ipcRenderer.invoke('session:update-config', updates);
+    },
+
+    // App State
+    async getAppState() {
+        const result = await ipcRenderer.invoke('session:get-app-state');
+        return result.success ? result.data : null;
+    },
+
+    // Clear State
+    async clear() {
+        return ipcRenderer.invoke('session:clear');
+    },
+
+    // Event listeners
+    onStarted(callback) {
+        ipcRenderer.on('session:started', (event, data) => callback(data));
+    },
+    onPaused(callback) {
+        ipcRenderer.on('session:paused', (event, data) => callback(data));
+    },
+    onResumed(callback) {
+        ipcRenderer.on('session:resumed', (event, data) => callback(data));
+    },
+    onEnded(callback) {
+        ipcRenderer.on('session:ended', (event, data) => callback(data));
+    },
+    onIdlePaused(callback) {
+        ipcRenderer.on('session:idle-paused', (event, data) => callback(data));
+    },
+    onAutoResumed(callback) {
+        ipcRenderer.on('session:auto-resumed', (event, data) => callback(data));
+    },
+    onCrashRecovered(callback) {
+        ipcRenderer.on('session:crash-recovered', (event, data) => callback(data));
+    },
+    onProfileCreated(callback) {
+        ipcRenderer.on('session:profile-created', (event, data) => callback(data));
+    },
+    onProfileLoaded(callback) {
+        ipcRenderer.on('session:profile-loaded', (event, data) => callback(data));
+    }
+};
+
 // Cache for preferences to avoid async calls in hot paths
 let preferencesCache = null;
 
@@ -179,35 +570,15 @@ async function loadPreferencesCache() {
 // Initialize preferences cache
 loadPreferencesCache();
 
-function convertFloat32ToInt16(float32Array) {
-    const int16Array = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-        // Improved scaling to prevent clipping
-        const s = Math.max(-1, Math.min(1, float32Array[i]));
-        int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-    return int16Array;
-}
-
-function arrayBufferToBase64(buffer) {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
-
 async function initializeGemini(profile = 'interview', language = 'en-US') {
     const apiKey = await storage.getApiKey();
     if (apiKey) {
         const prefs = await storage.getPreferences();
         const success = await ipcRenderer.invoke('initialize-gemini', apiKey, prefs.customPrompt || '', profile, language);
         if (success) {
-            cheatingDaddy.setStatus('Live');
+            workflowDaddy.setStatus('Live');
         } else {
-            cheatingDaddy.setStatus('error');
+            workflowDaddy.setStatus('error');
         }
     }
 }
@@ -215,168 +586,28 @@ async function initializeGemini(profile = 'interview', language = 'en-US') {
 // Listen for status updates
 ipcRenderer.on('update-status', (event, status) => {
     console.log('Status update:', status);
-    cheatingDaddy.setStatus(status);
+    workflowDaddy.setStatus(status);
 });
 
 async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'medium') {
     // Store the image quality for manual screenshots
     currentImageQuality = imageQuality;
 
-    // Refresh preferences cache
-    await loadPreferencesCache();
-    const audioMode = preferencesCache.audioMode || 'speaker_only';
-
     try {
-        if (isMacOS) {
-            // On macOS, use SystemAudioDump for audio and getDisplayMedia for screen
-            console.log('Starting macOS capture with SystemAudioDump...');
+        // Get screen capture for screenshots (video only, no audio)
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                frameRate: 1,
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+            },
+            audio: false,
+        });
 
-            // Start macOS audio capture
-            const audioResult = await ipcRenderer.invoke('start-macos-audio');
-            if (!audioResult.success) {
-                throw new Error('Failed to start macOS audio capture: ' + audioResult.error);
-            }
-
-            // Get screen capture for screenshots
-            mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    frameRate: 1,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                },
-                audio: false, // Don't use browser audio on macOS
-            });
-
-            console.log('macOS screen capture started - audio handled by SystemAudioDump');
-
-            if (audioMode === 'mic_only' || audioMode === 'both') {
-                let micStream = null;
-                try {
-                    micStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            sampleRate: SAMPLE_RATE,
-                            channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                        },
-                        video: false,
-                    });
-                    console.log('macOS microphone capture started');
-                    setupLinuxMicProcessing(micStream);
-                } catch (micError) {
-                    console.warn('Failed to get microphone access on macOS:', micError);
-                }
-            }
-        } else if (isLinux) {
-            // Linux - use display media for screen capture and try to get system audio
-            try {
-                // First try to get system audio via getDisplayMedia (works on newer browsers)
-                mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        frameRate: 1,
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                    },
-                    audio: {
-                        sampleRate: SAMPLE_RATE,
-                        channelCount: 1,
-                        echoCancellation: false, // Don't cancel system audio
-                        noiseSuppression: false,
-                        autoGainControl: false,
-                    },
-                });
-
-                console.log('Linux system audio capture via getDisplayMedia succeeded');
-
-                // Setup audio processing for Linux system audio
-                setupLinuxSystemAudioProcessing();
-            } catch (systemAudioError) {
-                console.warn('System audio via getDisplayMedia failed, trying screen-only capture:', systemAudioError);
-
-                // Fallback to screen-only capture
-                mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        frameRate: 1,
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                    },
-                    audio: false,
-                });
-            }
-
-            // Additionally get microphone input for Linux based on audio mode
-            if (audioMode === 'mic_only' || audioMode === 'both') {
-                let micStream = null;
-                try {
-                    micStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            sampleRate: SAMPLE_RATE,
-                            channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                        },
-                        video: false,
-                    });
-
-                    console.log('Linux microphone capture started');
-
-                    // Setup audio processing for microphone on Linux
-                    setupLinuxMicProcessing(micStream);
-                } catch (micError) {
-                    console.warn('Failed to get microphone access on Linux:', micError);
-                    // Continue without microphone if permission denied
-                }
-            }
-
-            console.log('Linux capture started - system audio:', mediaStream.getAudioTracks().length > 0, 'microphone mode:', audioMode);
-        } else {
-            // Windows - use display media with loopback for system audio
-            mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    frameRate: 1,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                },
-                audio: {
-                    sampleRate: SAMPLE_RATE,
-                    channelCount: 1,
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                },
-            });
-
-            console.log('Windows capture started with loopback audio');
-
-            // Setup audio processing for Windows loopback audio only
-            setupWindowsLoopbackProcessing();
-
-            if (audioMode === 'mic_only' || audioMode === 'both') {
-                let micStream = null;
-                try {
-                    micStream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            sampleRate: SAMPLE_RATE,
-                            channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                        },
-                        video: false,
-                    });
-                    console.log('Windows microphone capture started');
-                    setupLinuxMicProcessing(micStream);
-                } catch (micError) {
-                    console.warn('Failed to get microphone access on Windows:', micError);
-                }
-            }
-        }
+        console.log('Screen capture started');
 
         console.log('MediaStream obtained:', {
             hasVideo: mediaStream.getVideoTracks().length > 0,
-            hasAudio: mediaStream.getAudioTracks().length > 0,
             videoTrack: mediaStream.getVideoTracks()[0]?.getSettings(),
         });
 
@@ -384,101 +615,8 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
         console.log('Manual mode enabled - screenshots will be captured on demand only');
     } catch (err) {
         console.error('Error starting capture:', err);
-        cheatingDaddy.setStatus('error');
+        workflowDaddy.setStatus('error');
     }
-}
-
-function setupLinuxMicProcessing(micStream) {
-    // Setup microphone audio processing for Linux
-    const micAudioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const micSource = micAudioContext.createMediaStreamSource(micStream);
-    const micProcessor = micAudioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
-    micProcessor.onaudioprocess = async e => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
-
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-mic-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
-    };
-
-    micSource.connect(micProcessor);
-    micProcessor.connect(micAudioContext.destination);
-
-    // Store processor reference for cleanup
-    micAudioProcessor = micProcessor;
-}
-
-function setupLinuxSystemAudioProcessing() {
-    // Setup system audio processing for Linux (from getDisplayMedia)
-    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
-    audioProcessor.onaudioprocess = async e => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
-
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
-    };
-
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
-}
-
-function setupWindowsLoopbackProcessing() {
-    // Setup audio processing for Windows loopback audio only
-    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    audioProcessor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
-
-    let audioBuffer = [];
-    const samplesPerChunk = SAMPLE_RATE * AUDIO_CHUNK_DURATION;
-
-    audioProcessor.onaudioprocess = async e => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioBuffer.push(...inputData);
-
-        // Process audio in chunks
-        while (audioBuffer.length >= samplesPerChunk) {
-            const chunk = audioBuffer.splice(0, samplesPerChunk);
-            const pcmData16 = convertFloat32ToInt16(chunk);
-            const base64Data = arrayBufferToBase64(pcmData16.buffer);
-
-            await ipcRenderer.invoke('send-audio-content', {
-                data: base64Data,
-                mimeType: 'audio/pcm;rate=24000',
-            });
-        }
-    };
-
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
 }
 
 async function captureScreenshot(imageQuality = 'medium', isManual = false) {
@@ -657,7 +795,7 @@ async function captureManualScreenshot(imageQuality = null) {
                     // Response already displayed via streaming events (new-response/update-response)
                 } else {
                     console.error('Failed to get image response:', result.error);
-                    cheatingDaddy.addNewResponse(`Error: ${result.error}`);
+                    workflowDaddy.addNewResponse(`Error: ${result.error}`);
                 }
             };
             reader.readAsDataURL(blob);
@@ -676,32 +814,9 @@ function stopCapture() {
         screenshotInterval = null;
     }
 
-    if (audioProcessor) {
-        audioProcessor.disconnect();
-        audioProcessor = null;
-    }
-
-    // Clean up microphone audio processor (Linux only)
-    if (micAudioProcessor) {
-        micAudioProcessor.disconnect();
-        micAudioProcessor = null;
-    }
-
-    if (audioContext) {
-        audioContext.close();
-        audioContext = null;
-    }
-
     if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
-    }
-
-    // Stop macOS audio capture if running
-    if (isMacOS) {
-        ipcRenderer.invoke('stop-macos-audio').catch(err => {
-            console.error('Error stopping macOS audio:', err);
-        });
     }
 
     // Clean up hidden elements
@@ -774,11 +889,11 @@ ipcRenderer.on('save-screen-analysis', async (event, data) => {
 
 // Handle shortcuts based on current view
 function handleShortcut(shortcutKey) {
-    const currentView = cheatingDaddy.getCurrentView();
+    const currentView = workflowDaddy.getCurrentView();
 
     if (shortcutKey === 'ctrl+enter' || shortcutKey === 'cmd+enter') {
         if (currentView === 'main') {
-            cheatingDaddy.element().handleStart();
+            workflowDaddy.element().handleStart();
         } else {
             captureManualScreenshot();
         }
@@ -786,7 +901,52 @@ function handleShortcut(shortcutKey) {
 }
 
 // Create reference to the main app element
-const cheatingDaddyApp = document.querySelector('cheating-daddy-app');
+const workflowDaddyApp = document.querySelector('workflow-daddy-app');
+
+// ============ DOCUMENTATION API ============
+// Wrapper for documentation generation IPC calls
+const documentationApi = {
+    // Export documentation to file
+    async export(profileId, outputPath = null) {
+        const result = await ipcRenderer.invoke('documentation:export', profileId, outputPath);
+        return result;
+    },
+
+    // Generate documentation (markdown only, no file)
+    async generate(profileId) {
+        const result = await ipcRenderer.invoke('documentation:generate', profileId);
+        return result;
+    },
+
+    // Get a short preview
+    async preview(profileId) {
+        const result = await ipcRenderer.invoke('documentation:preview', profileId);
+        return result;
+    },
+
+    // Get aggregated data
+    async aggregate(profileId) {
+        const result = await ipcRenderer.invoke('documentation:aggregate', profileId);
+        return result.success ? result.data : null;
+    },
+
+    // Infer workflow steps using LLM
+    async inferSteps(task, screenshots) {
+        const result = await ipcRenderer.invoke('documentation:infer-steps', task, screenshots);
+        return result.success ? result.data : [];
+    },
+
+    // Event listeners
+    onGenerating(callback) {
+        ipcRenderer.on('documentation:generating', (event, data) => callback(data));
+    },
+    onComplete(callback) {
+        ipcRenderer.on('documentation:complete', (event, data) => callback(data));
+    },
+    onExported(callback) {
+        ipcRenderer.on('documentation:exported', (event, data) => callback(data));
+    }
+};
 
 // ============ THEME SYSTEM ============
 const theme = {
@@ -976,23 +1136,38 @@ const theme = {
     }
 };
 
-// Consolidated cheatingDaddy object - all functions in one place
-const cheatingDaddy = {
+// ============ WINDOW MODE API ============
+const windowModeApi = {
+    async switchMode(mode) {
+        const result = await ipcRenderer.invoke('window:switch-mode', mode);
+        return result.success ? result.mode : null;
+    },
+    async getMode() {
+        const result = await ipcRenderer.invoke('window:get-mode');
+        return result.success ? result.mode : 'hub';
+    },
+    onModeChange(callback) {
+        ipcRenderer.on('mode:change', (event, mode) => callback(mode));
+    }
+};
+
+// Consolidated workflowDaddy object - all functions in one place
+const workflowDaddy = {
     // App version
     getVersion: async () => ipcRenderer.invoke('get-app-version'),
 
     // Element access
-    element: () => cheatingDaddyApp,
-    e: () => cheatingDaddyApp,
+    element: () => workflowDaddyApp,
+    e: () => workflowDaddyApp,
 
     // App state functions - access properties directly from the app element
-    getCurrentView: () => cheatingDaddyApp.currentView,
-    getLayoutMode: () => cheatingDaddyApp.layoutMode,
+    getCurrentView: () => workflowDaddyApp.currentView,
+    getLayoutMode: () => workflowDaddyApp.layoutMode,
 
     // Status and response functions
-    setStatus: text => cheatingDaddyApp.setStatus(text),
-    addNewResponse: response => cheatingDaddyApp.addNewResponse(response),
-    updateCurrentResponse: response => cheatingDaddyApp.updateCurrentResponse(response),
+    setStatus: text => workflowDaddyApp.setStatus(text),
+    addNewResponse: response => workflowDaddyApp.addNewResponse(response),
+    updateCurrentResponse: response => workflowDaddyApp.updateCurrentResponse(response),
 
     // Core functionality
     initializeGemini,
@@ -1007,8 +1182,29 @@ const cheatingDaddy = {
     // Capture API
     capture: captureApi,
 
+    // Interview API
+    interview: interviewApi,
+
+    // Profiles API
+    profiles: profilesApi,
+
+    // Context API
+    context: contextApi,
+
+    // Confusion Detection API
+    confusion: confusionApi,
+
+    // Session Management API
+    session: sessionApi,
+
+    // Documentation Generation API
+    documentation: documentationApi,
+
     // Theme API
     theme,
+
+    // Window Mode API
+    windowMode: windowModeApi,
 
     // Refresh preferences cache (call after updating preferences)
     refreshPreferencesCache: loadPreferencesCache,
@@ -1016,10 +1212,13 @@ const cheatingDaddy = {
     // Platform detection
     isLinux: isLinux,
     isMacOS: isMacOS,
+
+    // Open external path
+    openDataFolder: async () => ipcRenderer.invoke('open-data-folder'),
 };
 
 // Make it globally available
-window.cheatingDaddy = cheatingDaddy;
+window.workflowDaddy = workflowDaddy;
 
 // Load theme after DOM is ready
 if (document.readyState === 'loading') {

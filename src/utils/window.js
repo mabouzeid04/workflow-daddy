@@ -7,7 +7,16 @@ const storage = require('../storage');
 let mouseEventsIgnored = false;
 let windowResizing = false;
 let resizeAnimation = null;
+let currentWindowMode = 'hub'; // 'hub' | 'interview' | 'observation' | 'question' | 'hidden'
 const RESIZE_ANIMATION_DURATION = 500; // milliseconds
+
+// Window mode configurations matching spec 08
+const WINDOW_MODES = {
+    hub: { width: 900, height: 600, position: 'center' },
+    interview: { width: 600, height: 500, position: 'center' },
+    observation: { width: 400, height: 150, position: 'top-right' },
+    question: { width: 500, height: 250, position: 'top-right' },
+};
 
 function createWindow(sendToRenderer, geminiSessionRef) {
     // Get layout preference (default to 'normal')
@@ -42,7 +51,7 @@ function createWindow(sendToRenderer, geminiSessionRef) {
         { useSystemPicker: true }
     );
 
-    mainWindow.setResizable(false);
+    mainWindow.setResizable(true);
     mainWindow.setContentProtection(true);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
@@ -114,6 +123,7 @@ function getDefaultKeybinds() {
         nextResponse: isMac ? 'Cmd+]' : 'Ctrl+]',
         scrollUp: isMac ? 'Cmd+Shift+Up' : 'Ctrl+Shift+Up',
         scrollDown: isMac ? 'Cmd+Shift+Down' : 'Ctrl+Shift+Down',
+        openSettings: isMac ? 'Cmd+,' : 'Ctrl+,',
     };
 }
 
@@ -212,7 +222,7 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
 
                     // Use the new handleShortcut function
                     mainWindow.webContents.executeJavaScript(`
-                        cheatingDaddy.handleShortcut('${shortcutKey}');
+                        workflowDaddy.handleShortcut('${shortcutKey}');
                     `);
                 } catch (error) {
                     console.error('Error handling next step shortcut:', error);
@@ -275,11 +285,31 @@ function updateGlobalShortcuts(keybinds, mainWindow, sendToRenderer, geminiSessi
             console.error(`Failed to register scrollDown (${keybinds.scrollDown}):`, error);
         }
     }
+
+    // Register open settings shortcut
+    if (keybinds.openSettings) {
+        try {
+            globalShortcut.register(keybinds.openSettings, () => {
+                console.log('Open settings shortcut triggered');
+                if (!mainWindow.isVisible()) {
+                    mainWindow.show();
+                }
+                // Switch back to hub mode if in observation/question mode
+                if (currentWindowMode === 'observation' || currentWindowMode === 'question') {
+                    switchWindowMode(mainWindow, 'hub');
+                }
+                mainWindow.webContents.send('navigate-to-settings');
+            });
+            console.log(`Registered openSettings: ${keybinds.openSettings}`);
+        } catch (error) {
+            console.error(`Failed to register openSettings (${keybinds.openSettings}):`, error);
+        }
+    }
 }
 
 function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
     ipcMain.on('view-changed', (event, view) => {
-        if (view !== 'assistant' && !mainWindow.isDestroyed()) {
+        if (!mainWindow.isDestroyed()) {
             mainWindow.setIgnoreMouseEvents(false);
         }
     });
@@ -382,7 +412,7 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
 
                     // Check if window is still valid before final operations
                     if (!mainWindow.isDestroyed()) {
-                        mainWindow.setResizable(false);
+                        mainWindow.setResizable(true);
 
                         // Ensure final size is exact
                         mainWindow.setSize(targetWidth, targetHeight);
@@ -397,6 +427,20 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
         });
     }
 
+    ipcMain.handle('window:switch-mode', async (event, mode) => {
+        try {
+            switchWindowMode(mainWindow, mode);
+            return { success: true, mode };
+        } catch (error) {
+            console.error('Error switching window mode:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('window:get-mode', async () => {
+        return { success: true, mode: currentWindowMode };
+    });
+
     ipcMain.handle('update-sizes', async event => {
         try {
             if (mainWindow.isDestroyed()) {
@@ -406,8 +450,8 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
             // Get current view and layout mode from renderer
             let viewName, layoutMode;
             try {
-                viewName = await event.sender.executeJavaScript('cheatingDaddy.getCurrentView()');
-                layoutMode = await event.sender.executeJavaScript('cheatingDaddy.getLayoutMode()');
+                viewName = await event.sender.executeJavaScript('workflowDaddy.getCurrentView()');
+                layoutMode = await event.sender.executeJavaScript('workflowDaddy.getLayoutMode()');
             } catch (error) {
                 console.warn('Failed to get view/layout from renderer, using defaults:', error);
                 viewName = 'main';
@@ -441,7 +485,10 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
                     targetWidth = baseWidth;
                     targetHeight = layoutMode === 'compact' ? 650 : 750;
                     break;
-                case 'assistant':
+                case 'observation':
+                    targetWidth = 400;
+                    targetHeight = 150;
+                    break;
                 case 'onboarding':
                 default:
                     targetWidth = baseWidth;
@@ -467,9 +514,71 @@ function setupWindowIpcHandlers(mainWindow, sendToRenderer, geminiSessionRef) {
     });
 }
 
+/**
+ * Switch the window to a specific mode (interview, observation, question, hidden, hub).
+ * Adjusts size and position based on spec 08 window configurations.
+ * @param {BrowserWindow} mainWindow
+ * @param {string} mode - 'interview' | 'observation' | 'question' | 'hidden' | 'hub'
+ */
+function switchWindowMode(mainWindow, mode) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    const previousMode = currentWindowMode;
+    currentWindowMode = mode;
+
+    if (mode === 'hidden') {
+        mainWindow.hide();
+        mainWindow.webContents.send('mode:change', mode);
+        return;
+    }
+
+    const config = WINDOW_MODES[mode];
+    if (!config) {
+        console.warn(`Unknown window mode: ${mode}`);
+        return;
+    }
+
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth } = primaryDisplay.workAreaSize;
+
+    let targetX, targetY;
+    if (config.position === 'center') {
+        targetX = Math.floor((screenWidth - config.width) / 2);
+        targetY = Math.floor((primaryDisplay.workAreaSize.height - config.height) / 4);
+    } else if (config.position === 'top-right') {
+        targetX = screenWidth - config.width - 20;
+        targetY = 20;
+    }
+
+    // Make visible if hidden
+    if (!mainWindow.isVisible()) {
+        mainWindow.showInactive();
+    }
+
+    mainWindow.setResizable(true);
+    mainWindow.setSize(config.width, config.height);
+    mainWindow.setPosition(targetX, targetY);
+    mainWindow.setResizable(true);
+
+    // Notify renderer of mode change
+    mainWindow.webContents.send('mode:change', mode);
+
+    console.log(`Window mode switched: ${previousMode} → ${mode} (${config.width}x${config.height})`);
+}
+
+/**
+ * Get the current window mode.
+ * @returns {string}
+ */
+function getCurrentWindowMode() {
+    return currentWindowMode;
+}
+
 module.exports = {
     createWindow,
     getDefaultKeybinds,
     updateGlobalShortcuts,
     setupWindowIpcHandlers,
+    switchWindowMode,
+    getCurrentWindowMode,
 };

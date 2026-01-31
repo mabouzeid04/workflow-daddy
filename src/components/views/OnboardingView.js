@@ -464,9 +464,9 @@ export class OnboardingView extends LitElement {
 
     async completeOnboarding() {
         if (this.contextText.trim()) {
-            await cheatingDaddy.storage.updatePreference('customPrompt', this.contextText.trim());
+            await workflowDaddy.storage.updatePreference('customPrompt', this.contextText.trim());
         }
-        await cheatingDaddy.storage.updateConfig('onboarded', true);
+        await workflowDaddy.storage.updateConfig('onboarded', true);
         this.onComplete();
     }
 
@@ -474,19 +474,19 @@ export class OnboardingView extends LitElement {
         const slides = [
             {
                 icon: 'assets/onboarding/welcome.svg',
-                title: 'Welcome to Cheating Daddy',
+                title: 'Welcome to Workflow Daddy',
                 content:
-                    'Your AI assistant that listens and watches, then provides intelligent suggestions automatically during interviews and meetings.',
+                    'Your AI-powered workflow observer that watches your screen, detects tasks, and automatically generates documentation.',
             },
             {
                 icon: 'assets/onboarding/security.svg',
-                title: 'Completely Private',
-                content: 'Invisible to screen sharing apps and recording software. Your secret advantage stays completely hidden from others.',
+                title: 'Private & Local',
+                content: 'All data stays on your machine. Screenshots, session data, and documentation are stored locally.',
             },
             {
                 icon: 'assets/onboarding/context.svg',
                 title: 'Add Your Context',
-                content: 'Share relevant information to help the AI provide better, more personalized assistance.',
+                content: 'Share relevant information about your workflow to help the AI provide better, more accurate documentation.',
                 showTextarea: true,
             },
             {
@@ -498,7 +498,7 @@ export class OnboardingView extends LitElement {
             {
                 icon: 'assets/onboarding/ready.svg',
                 title: 'Ready to Go',
-                content: 'Add your Gemini API key in settings and start getting AI-powered assistance in real-time.',
+                content: 'Add your Gemini API key in settings and start observing your workflow.',
             },
         ];
 
@@ -526,7 +526,7 @@ export class OnboardingView extends LitElement {
                         ? html`
                               <textarea
                                   class="context-textarea"
-                                  placeholder="Paste your resume, job description, or any relevant context here..."
+                                  placeholder="Describe your typical workflow, tools you use, or any relevant context..."
                                   .value=${this.contextText}
                                   @input=${this.handleContextInput}
                               ></textarea>
@@ -537,15 +537,15 @@ export class OnboardingView extends LitElement {
                               <div class="feature-list">
                                   <div class="feature-item">
                                       <span class="feature-icon">-</span>
-                                      Customize AI behavior and responses
+                                      Automatic task detection and tracking
                                   </div>
                                   <div class="feature-item">
                                       <span class="feature-icon">-</span>
-                                      Review conversation history
+                                      AI-generated workflow documentation
                                   </div>
                                   <div class="feature-item">
                                       <span class="feature-icon">-</span>
-                                      Adjust capture settings and intervals
+                                      Configurable capture and observation settings
                                   </div>
                               </div>
                           `

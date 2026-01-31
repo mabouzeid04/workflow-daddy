@@ -149,19 +149,17 @@ export class AppHeader extends LitElement {
         this.onHideToggleClick = () => {};
         this.isClickThrough = false;
         this.updateAvailable = false;
-        this._timerInterval = null;
     }
 
     connectedCallback() {
         super.connectedCallback();
-        this._startTimer();
         this._checkForUpdates();
     }
 
     async _checkForUpdates() {
         try {
-            const currentVersion = await cheatingDaddy.getVersion();
-            const response = await fetch('https://raw.githubusercontent.com/sohzm/cheating-daddy/refs/heads/master/package.json');
+            const currentVersion = await workflowDaddy.getVersion();
+            const response = await fetch('https://raw.githubusercontent.com/sohzm/workflow-daddy/refs/heads/master/package.json');
             if (!response.ok) return;
 
             const remotePackage = await response.json();
@@ -190,80 +188,19 @@ export class AppHeader extends LitElement {
 
     async _openUpdatePage() {
         const { ipcRenderer } = require('electron');
-        await ipcRenderer.invoke('open-external', 'https://cheatingdaddy.com');
-    }
-
-    disconnectedCallback() {
-        super.disconnectedCallback();
-        this._stopTimer();
-    }
-
-    updated(changedProperties) {
-        super.updated(changedProperties);
-
-        // Start/stop timer based on view change
-        if (changedProperties.has('currentView')) {
-            if (this.currentView === 'assistant' && this.startTime) {
-                this._startTimer();
-            } else {
-                this._stopTimer();
-            }
-        }
-
-        // Start timer when startTime is set
-        if (changedProperties.has('startTime')) {
-            if (this.startTime && this.currentView === 'assistant') {
-                this._startTimer();
-            } else if (!this.startTime) {
-                this._stopTimer();
-            }
-        }
-    }
-
-    _startTimer() {
-        // Clear any existing timer
-        this._stopTimer();
-
-        // Only start timer if we're in assistant view and have a start time
-        if (this.currentView === 'assistant' && this.startTime) {
-            this._timerInterval = setInterval(() => {
-                // Trigger a re-render by requesting an update
-                this.requestUpdate();
-            }, 1000); // Update every second
-        }
-    }
-
-    _stopTimer() {
-        if (this._timerInterval) {
-            clearInterval(this._timerInterval);
-            this._timerInterval = null;
-        }
+        await ipcRenderer.invoke('open-external', 'https://workflowdaddy.com');
     }
 
     getViewTitle() {
         const titles = {
-            onboarding: 'Welcome to Cheating Daddy',
-            main: 'Cheating Daddy',
+            onboarding: 'Welcome to Workflow Daddy',
+            main: 'Workflow Daddy',
             customize: 'Customize',
             help: 'Help & Shortcuts',
             history: 'Conversation History',
             advanced: 'Advanced Tools',
-            assistant: 'Cheating Daddy',
         };
-        return titles[this.currentView] || 'Cheating Daddy';
-    }
-
-    getElapsedTime() {
-        if (this.currentView === 'assistant' && this.startTime) {
-            const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-            if (elapsed >= 60) {
-                const minutes = Math.floor(elapsed / 60);
-                const seconds = elapsed % 60;
-                return `${minutes}m ${seconds}s`;
-            }
-            return `${elapsed}s`;
-        }
-        return '';
+        return titles[this.currentView] || 'Workflow Daddy';
     }
 
     isNavigationView() {
@@ -272,19 +209,10 @@ export class AppHeader extends LitElement {
     }
 
     render() {
-        const elapsedTime = this.getElapsedTime();
-
         return html`
             <div class="header">
                 <div class="header-title">${this.getViewTitle()}</div>
                 <div class="header-actions">
-                    ${this.currentView === 'assistant'
-                        ? html`
-                              <span>${elapsedTime}</span>
-                              <span>${this.statusText}</span>
-                              ${this.isClickThrough ? html`<span class="click-through-indicator">click-through</span>` : ''}
-                          `
-                        : ''}
                     ${this.currentView === 'main'
                         ? html`
                               ${this.updateAvailable ? html`
@@ -312,25 +240,11 @@ export class AppHeader extends LitElement {
                               </button>
                           `
                         : ''}
-                    ${this.currentView === 'assistant'
-                        ? html`
-                              <button @click=${this.onHideToggleClick} class="button">
-                                  Hide&nbsp;&nbsp;<span class="key" style="pointer-events: none;">${cheatingDaddy.isMacOS ? 'Cmd' : 'Ctrl'}</span
-                                  >&nbsp;&nbsp;<span class="key">&bsol;</span>
-                              </button>
-                              <button @click=${this.onCloseClick} class="icon-button window-close">
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                      <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-                                  </svg>
-                              </button>
-                          `
-                        : html`
-                              <button @click=${this.isNavigationView() ? this.onBackClick : this.onCloseClick} class="icon-button window-close">
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                      <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-                                  </svg>
-                              </button>
-                          `}
+                    <button @click=${this.isNavigationView() ? this.onBackClick : this.onCloseClick} class="icon-button window-close">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                        </svg>
+                    </button>
                 </div>
             </div>
         `;

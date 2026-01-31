@@ -537,38 +537,31 @@ export class CustomizeView extends LitElement {
 
     static properties = {
         selectedProfile: { type: String },
-        selectedLanguage: { type: String },
         selectedImageQuality: { type: String },
         layoutMode: { type: String },
         keybinds: { type: Object },
-        googleSearchEnabled: { type: Boolean },
         backgroundTransparency: { type: Number },
         fontSize: { type: Number },
         theme: { type: String },
         onProfileChange: { type: Function },
-        onLanguageChange: { type: Function },
         onImageQualityChange: { type: Function },
         onLayoutModeChange: { type: Function },
         activeSection: { type: String },
         isClearing: { type: Boolean },
         clearStatusMessage: { type: String },
         clearStatusType: { type: String },
+        dataLocation: { type: String },
     };
 
     constructor() {
         super();
         this.selectedProfile = 'interview';
-        this.selectedLanguage = 'en-US';
         this.selectedImageQuality = 'medium';
         this.layoutMode = 'normal';
         this.keybinds = this.getDefaultKeybinds();
         this.onProfileChange = () => {};
-        this.onLanguageChange = () => {};
         this.onImageQualityChange = () => {};
         this.onLayoutModeChange = () => {};
-
-        // Google Search default
-        this.googleSearchEnabled = true;
 
         // Clear data state
         this.isClearing = false;
@@ -581,9 +574,6 @@ export class CustomizeView extends LitElement {
         // Font size default (in pixels)
         this.fontSize = 20;
 
-        // Audio mode default
-        this.audioMode = 'speaker_only';
-
         // Custom prompt
         this.customPrompt = '';
 
@@ -593,11 +583,14 @@ export class CustomizeView extends LitElement {
         // Theme default
         this.theme = 'dark';
 
+        // Storage location
+        this.dataLocation = '~/.workflow-shadow';
+
         this._loadFromStorage();
     }
 
     getThemes() {
-        return cheatingDaddy.theme.getAll();
+        return workflowDaddy.theme.getAll();
     }
 
     setActiveSection(section) {
@@ -609,11 +602,9 @@ export class CustomizeView extends LitElement {
         return [
             { id: 'profile', name: 'Profile', icon: 'user' },
             { id: 'appearance', name: 'Appearance', icon: 'display' },
-            { id: 'audio', name: 'Audio', icon: 'mic' },
-            { id: 'language', name: 'Language', icon: 'globe' },
             { id: 'capture', name: 'Capture', icon: 'camera' },
+            { id: 'storage', name: 'Storage', icon: 'folder' },
             { id: 'keyboard', name: 'Keyboard', icon: 'keyboard' },
-            { id: 'search', name: 'Search', icon: 'search' },
             { id: 'advanced', name: 'Advanced', icon: 'warning', danger: true },
         ];
     }
@@ -623,17 +614,6 @@ export class CustomizeView extends LitElement {
             user: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M19 21V19C19 17.9391 18.5786 16.9217 17.8284 16.1716C17.0783 15.4214 16.0609 15 15 15H9C7.93913 15 6.92172 15.4214 6.17157 16.1716C5.42143 16.9217 5 17.9391 5 19V21"></path>
                 <circle cx="12" cy="7" r="4"></circle>
-            </svg>`,
-            mic: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-            </svg>`,
-            globe: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="2" y1="12" x2="22" y2="12"></line>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
             </svg>`,
             display: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -655,9 +635,8 @@ export class CustomizeView extends LitElement {
                 <path d="M16 12h.001"></path>
                 <path d="M7 16h10"></path>
             </svg>`,
-            search: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            folder: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>`,
             warning: html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -671,16 +650,15 @@ export class CustomizeView extends LitElement {
     async _loadFromStorage() {
         try {
             const [prefs, keybinds] = await Promise.all([
-                cheatingDaddy.storage.getPreferences(),
-                cheatingDaddy.storage.getKeybinds()
+                workflowDaddy.storage.getPreferences(),
+                workflowDaddy.storage.getKeybinds()
             ]);
 
-            this.googleSearchEnabled = prefs.googleSearchEnabled ?? true;
             this.backgroundTransparency = prefs.backgroundTransparency ?? 0.8;
             this.fontSize = prefs.fontSize ?? 20;
-            this.audioMode = prefs.audioMode ?? 'speaker_only';
             this.customPrompt = prefs.customPrompt ?? '';
             this.theme = prefs.theme ?? 'dark';
+            this.dataLocation = prefs.dataLocation ?? '~/.workflow-shadow';
 
             if (keybinds) {
                 this.keybinds = { ...this.getDefaultKeybinds(), ...keybinds };
@@ -704,91 +682,21 @@ export class CustomizeView extends LitElement {
         return [
             {
                 value: 'interview',
-                name: 'Job Interview',
-                description: 'Get help with answering interview questions',
+                name: 'Workflow Documentation',
+                description: 'Document your job workflows, processes, tools, and decisions',
             },
-            {
-                value: 'sales',
-                name: 'Sales Call',
-                description: 'Assist with sales conversations and objection handling',
-            },
-            {
-                value: 'meeting',
-                name: 'Business Meeting',
-                description: 'Support for professional meetings and discussions',
-            },
-            {
-                value: 'presentation',
-                name: 'Presentation',
-                description: 'Help with presentations and public speaking',
-            },
-            {
-                value: 'negotiation',
-                name: 'Negotiation',
-                description: 'Guidance for business negotiations and deals',
-            },
-            {
-                value: 'exam',
-                name: 'Exam Assistant',
-                description: 'Academic assistance for test-taking and exam questions',
-            },
-        ];
-    }
-
-    getLanguages() {
-        return [
-            { value: 'en-US', name: 'English (US)' },
-            { value: 'en-GB', name: 'English (UK)' },
-            { value: 'en-AU', name: 'English (Australia)' },
-            { value: 'en-IN', name: 'English (India)' },
-            { value: 'de-DE', name: 'German (Germany)' },
-            { value: 'es-US', name: 'Spanish (United States)' },
-            { value: 'es-ES', name: 'Spanish (Spain)' },
-            { value: 'fr-FR', name: 'French (France)' },
-            { value: 'fr-CA', name: 'French (Canada)' },
-            { value: 'hi-IN', name: 'Hindi (India)' },
-            { value: 'pt-BR', name: 'Portuguese (Brazil)' },
-            { value: 'ar-XA', name: 'Arabic (Generic)' },
-            { value: 'id-ID', name: 'Indonesian (Indonesia)' },
-            { value: 'it-IT', name: 'Italian (Italy)' },
-            { value: 'ja-JP', name: 'Japanese (Japan)' },
-            { value: 'tr-TR', name: 'Turkish (Turkey)' },
-            { value: 'vi-VN', name: 'Vietnamese (Vietnam)' },
-            { value: 'bn-IN', name: 'Bengali (India)' },
-            { value: 'gu-IN', name: 'Gujarati (India)' },
-            { value: 'kn-IN', name: 'Kannada (India)' },
-            { value: 'ml-IN', name: 'Malayalam (India)' },
-            { value: 'mr-IN', name: 'Marathi (India)' },
-            { value: 'ta-IN', name: 'Tamil (India)' },
-            { value: 'te-IN', name: 'Telugu (India)' },
-            { value: 'nl-NL', name: 'Dutch (Netherlands)' },
-            { value: 'ko-KR', name: 'Korean (South Korea)' },
-            { value: 'cmn-CN', name: 'Mandarin Chinese (China)' },
-            { value: 'pl-PL', name: 'Polish (Poland)' },
-            { value: 'ru-RU', name: 'Russian (Russia)' },
-            { value: 'th-TH', name: 'Thai (Thailand)' },
         ];
     }
 
     getProfileNames() {
         return {
-            interview: 'Job Interview',
-            sales: 'Sales Call',
-            meeting: 'Business Meeting',
-            presentation: 'Presentation',
-            negotiation: 'Negotiation',
-            exam: 'Exam Assistant',
+            interview: 'Workflow Documentation',
         };
     }
 
     handleProfileSelect(e) {
         this.selectedProfile = e.target.value;
         this.onProfileChange(this.selectedProfile);
-    }
-
-    handleLanguageSelect(e) {
-        this.selectedLanguage = e.target.value;
-        this.onLanguageChange(this.selectedLanguage);
     }
 
     handleImageQualitySelect(e) {
@@ -803,24 +711,18 @@ export class CustomizeView extends LitElement {
 
     async handleCustomPromptInput(e) {
         this.customPrompt = e.target.value;
-        await cheatingDaddy.storage.updatePreference('customPrompt', e.target.value);
-    }
-
-    async handleAudioModeSelect(e) {
-        this.audioMode = e.target.value;
-        await cheatingDaddy.storage.updatePreference('audioMode', e.target.value);
-        this.requestUpdate();
+        await workflowDaddy.storage.updatePreference('customPrompt', e.target.value);
     }
 
     async handleThemeChange(e) {
         this.theme = e.target.value;
-        await cheatingDaddy.theme.save(this.theme);
+        await workflowDaddy.theme.save(this.theme);
         this.updateBackgroundAppearance();
         this.requestUpdate();
     }
 
     getDefaultKeybinds() {
-        const isMac = cheatingDaddy.isMacOS || navigator.platform.includes('Mac');
+        const isMac = workflowDaddy.isMacOS || navigator.platform.includes('Mac');
         return {
             moveUp: isMac ? 'Alt+Up' : 'Ctrl+Up',
             moveDown: isMac ? 'Alt+Down' : 'Ctrl+Down',
@@ -837,7 +739,7 @@ export class CustomizeView extends LitElement {
     }
 
     async saveKeybinds() {
-        await cheatingDaddy.storage.setKeybinds(this.keybinds);
+        await workflowDaddy.storage.setKeybinds(this.keybinds);
         // Send to main process to update global shortcuts
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
@@ -853,7 +755,7 @@ export class CustomizeView extends LitElement {
 
     async resetKeybinds() {
         this.keybinds = this.getDefaultKeybinds();
-        await cheatingDaddy.storage.setKeybinds(null);
+        await workflowDaddy.storage.setKeybinds(null);
         this.requestUpdate();
         if (window.require) {
             const { ipcRenderer } = window.require('electron');
@@ -996,23 +898,6 @@ export class CustomizeView extends LitElement {
         e.target.blur();
     }
 
-    async handleGoogleSearchChange(e) {
-        this.googleSearchEnabled = e.target.checked;
-        await cheatingDaddy.storage.updatePreference('googleSearchEnabled', this.googleSearchEnabled);
-
-        // Notify main process if available
-        if (window.require) {
-            try {
-                const { ipcRenderer } = window.require('electron');
-                await ipcRenderer.invoke('update-google-search-setting', this.googleSearchEnabled);
-            } catch (error) {
-                console.error('Failed to notify main process:', error);
-            }
-        }
-
-        this.requestUpdate();
-    }
-
     async clearLocalData() {
         if (this.isClearing) return;
 
@@ -1022,7 +907,7 @@ export class CustomizeView extends LitElement {
         this.requestUpdate();
 
         try {
-            await cheatingDaddy.storage.clearAll();
+            await workflowDaddy.storage.clearAll();
 
             this.clearStatusMessage = 'Successfully cleared all local data';
             this.clearStatusType = 'success';
@@ -1051,15 +936,15 @@ export class CustomizeView extends LitElement {
 
     async handleBackgroundTransparencyChange(e) {
         this.backgroundTransparency = parseFloat(e.target.value);
-        await cheatingDaddy.storage.updatePreference('backgroundTransparency', this.backgroundTransparency);
+        await workflowDaddy.storage.updatePreference('backgroundTransparency', this.backgroundTransparency);
         this.updateBackgroundAppearance();
         this.requestUpdate();
     }
 
     updateBackgroundAppearance() {
         // Use theme's background color
-        const colors = cheatingDaddy.theme.get(this.theme);
-        cheatingDaddy.theme.applyBackgrounds(colors.background, this.backgroundTransparency);
+        const colors = workflowDaddy.theme.get(this.theme);
+        workflowDaddy.theme.applyBackgrounds(colors.background, this.backgroundTransparency);
     }
 
     // Keep old function name for backwards compatibility
@@ -1069,7 +954,7 @@ export class CustomizeView extends LitElement {
 
     async handleFontSizeChange(e) {
         this.fontSize = parseInt(e.target.value, 10);
-        await cheatingDaddy.storage.updatePreference('fontSize', this.fontSize);
+        await workflowDaddy.storage.updatePreference('fontSize', this.fontSize);
         this.updateFontSize();
         this.requestUpdate();
     }
@@ -1118,52 +1003,6 @@ export class CustomizeView extends LitElement {
                             Personalize the AI's behavior with specific instructions
                         </div>
                     </div>
-                </div>
-            </div>
-        `;
-    }
-
-    renderAudioSection() {
-        return html`
-            <div class="content-header">Audio Settings</div>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label class="form-label">Audio Mode</label>
-                    <select class="form-control" .value=${this.audioMode} @change=${this.handleAudioModeSelect}>
-                        <option value="speaker_only">Speaker Only (Interviewer)</option>
-                        <option value="mic_only">Microphone Only (Me)</option>
-                        <option value="both">Both Speaker & Microphone</option>
-                    </select>
-                    <div class="form-description">
-                        Choose which audio sources to capture for the AI.
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    renderLanguageSection() {
-        const languages = this.getLanguages();
-        const currentLanguage = languages.find(l => l.value === this.selectedLanguage);
-
-        return html`
-            <div class="content-header">Language</div>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label class="form-label">
-                        Speech Language
-                        <span class="current-selection">${currentLanguage?.name || 'Unknown'}</span>
-                    </label>
-                    <select class="form-control" .value=${this.selectedLanguage} @change=${this.handleLanguageSelect}>
-                        ${languages.map(
-                            language => html`
-                                <option value=${language.value} ?selected=${this.selectedLanguage === language.value}>
-                                    ${language.name}
-                                </option>
-                            `
-                        )}
-                    </select>
-                    <div class="form-description">Language for speech recognition and AI responses</div>
                 </div>
             </div>
         `;
@@ -1331,28 +1170,6 @@ export class CustomizeView extends LitElement {
         `;
     }
 
-    renderSearchSection() {
-        return html`
-            <div class="content-header">Search</div>
-            <div class="form-grid">
-                <div class="checkbox-group">
-                    <input
-                        type="checkbox"
-                        class="checkbox-input"
-                        id="google-search-enabled"
-                        .checked=${this.googleSearchEnabled}
-                        @change=${this.handleGoogleSearchChange}
-                    />
-                    <label for="google-search-enabled" class="checkbox-label">Enable Google Search</label>
-                </div>
-                <div class="form-description" style="margin-left: 24px; margin-top: -8px;">
-                    Allow the AI to search Google for up-to-date information during conversations.
-                    <br /><strong>Note:</strong> Changes take effect when starting a new AI session.
-                </div>
-            </div>
-        `;
-    }
-
     renderAdvancedSection() {
         return html`
             <div class="content-header" style="color: var(--error-color);">Advanced</div>
@@ -1379,22 +1196,51 @@ export class CustomizeView extends LitElement {
         `;
     }
 
+    async handleOpenDataFolder() {
+        if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('open-data-folder');
+        }
+    }
+
+    renderStorageSection() {
+        return html`
+            <div class="content-header">Storage</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Data Location</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input
+                            type="text"
+                            class="form-control"
+                            .value=${this.dataLocation}
+                            readonly
+                            style="flex: 1; font-family: 'SF Mono', Monaco, monospace; font-size: 11px;"
+                        />
+                        <button class="reset-keybinds-button" @click=${this.handleOpenDataFolder}>
+                            Open Folder
+                        </button>
+                    </div>
+                    <div class="form-description">
+                        Location where screenshots, session data, and documentation are stored.
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     renderSectionContent() {
         switch (this.activeSection) {
             case 'profile':
                 return this.renderProfileSection();
             case 'appearance':
                 return this.renderAppearanceSection();
-            case 'audio':
-                return this.renderAudioSection();
-            case 'language':
-                return this.renderLanguageSection();
             case 'capture':
                 return this.renderCaptureSection();
+            case 'storage':
+                return this.renderStorageSection();
             case 'keyboard':
                 return this.renderKeyboardSection();
-            case 'search':
-                return this.renderSearchSection();
             case 'advanced':
                 return this.renderAdvancedSection();
             default:

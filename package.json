@@ -1,8 +1,8 @@
 {
-    "name": "cheating-daddy",
-    "productName": "cheating-daddy",
+    "name": "workflow-daddy",
+    "productName": "workflow-daddy",
     "version": "0.5.0",
-    "description": "cheating daddy",
+    "description": "workflow daddy",
     "main": "src/index.js",
     "scripts": {
         "start": "electron-forge start",
@@ -12,11 +12,11 @@
         "lint": "echo \"No linting configured\""
     },
     "keywords": [
-        "cheating daddy",
-        "cheating daddy ai",
-        "cheating daddy ai assistant",
-        "cheating daddy ai assistant for interviews",
-        "cheating daddy ai assistant for interviews"
+        "workflow daddy",
+        "workflow daddy ai",
+        "workflow daddy ai assistant",
+        "workflow daddy ai assistant for interviews",
+        "workflow daddy ai assistant for interviews"
     ],
     "author": {
         "name": "sohzm",

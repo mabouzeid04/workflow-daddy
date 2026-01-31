@@ -88,7 +88,7 @@ Screen capture settings can be configured through the app interface:
 ### Data Storage
 
 Captured data is stored locally in the app's configuration directory:
-- Screenshots: `~/Library/Application Support/cheating-daddy-config/sessions/{sessionId}/screenshots/`
+- Screenshots: `~/Library/Application Support/workflow-daddy-config/sessions/{sessionId}/screenshots/`
 - Metadata: JSON files containing screenshot metadata and application usage records
 
 ## Requirements

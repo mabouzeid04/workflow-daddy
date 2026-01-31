@@ -16,7 +16,7 @@ function formatSpeakerResults(results) {
     let text = '';
     for (const result of results) {
         if (result.transcript && result.speakerId) {
-            const speakerLabel = result.speakerId === 1 ? 'Interviewer' : 'Candidate';
+            const speakerLabel = result.speakerId === 1 ? 'User' : 'AI';
             text += `[${speakerLabel}]: ${result.transcript}\n`;
         }
     }
@@ -50,7 +50,7 @@ function buildContextMessage() {
     if (validTurns.length === 0) return null;
 
     const contextLines = validTurns.map(turn =>
-        `[Interviewer]: ${turn.transcription.trim()}\n[Your answer]: ${turn.ai_response.trim()}`
+        `[User]: ${turn.transcription.trim()}\n[AI]: ${turn.ai_response.trim()}`
     );
 
     return `Session reconnected. Here's the conversation so far:\n\n${contextLines.join('\n\n')}\n\nContinue from here.`;
@@ -513,6 +513,60 @@ function setupGeminiIpcHandlers(geminiSessionRef) {
     });
 }
 
+/**
+ * Generate content using Gemini API (supports text and images)
+ * Used by taskDetection and other services for AI analysis
+ * @param {Array} parts - Array of content parts (text or inlineData)
+ * @param {Object} config - Generation config (temperature, maxOutputTokens)
+ * @returns {Promise<string>} - The generated text response
+ */
+async function generateContent(parts, config = {}) {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        throw new Error('No API key configured');
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts }],
+            generationConfig: {
+                temperature: config.temperature ?? 0.3,
+                maxOutputTokens: config.maxOutputTokens ?? 500
+            }
+        });
+
+        return response.text || '';
+    } catch (error) {
+        console.error('Error in generateContent:', error);
+        throw error;
+    }
+}
+
+/**
+ * Analyze an image with a prompt using Gemini vision
+ * @param {Object} params - Parameters for image analysis
+ * @param {string} params.image - Base64 encoded image data
+ * @param {string} params.prompt - The prompt to analyze the image with
+ * @param {string} [params.mimeType='image/png'] - MIME type of the image
+ * @returns {Promise<string>} - The analysis response text
+ */
+async function analyzeImage({ image, prompt, mimeType = 'image/png' }) {
+    const parts = [
+        { text: prompt },
+        {
+            inlineData: {
+                mimeType,
+                data: image
+            }
+        }
+    ];
+
+    return generateContent(parts, { temperature: 0.3, maxOutputTokens: 1000 });
+}
+
 module.exports = {
     initializeGeminiSession,
     getEnabledTools,
@@ -524,4 +578,6 @@ module.exports = {
     sendImageToGeminiHttp,
     setupGeminiIpcHandlers,
     formatSpeakerResults,
+    generateContent,
+    analyzeImage,
 };

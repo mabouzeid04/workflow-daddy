@@ -349,6 +349,30 @@ export class HistoryView extends LitElement {
             background: rgba(241, 76, 76, 0.1);
             color: var(--error-color);
         }
+
+        .preview-docs-button {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.1s ease;
+        }
+
+        .preview-docs-button:hover {
+            color: var(--text-color);
+            border-color: var(--text-muted);
+            background: var(--hover-background);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
     `;
 
     static properties = {
@@ -356,6 +380,7 @@ export class HistoryView extends LitElement {
         selectedSession: { type: Object },
         loading: { type: Boolean },
         activeTab: { type: String },
+        onPreview: { type: Function },
     };
 
     constructor() {
@@ -364,6 +389,7 @@ export class HistoryView extends LitElement {
         this.selectedSession = null;
         this.loading = true;
         this.activeTab = 'conversation'; // 'conversation' or 'screen'
+        this.onPreview = () => {};
         this.loadSessions();
     }
 
@@ -376,7 +402,7 @@ export class HistoryView extends LitElement {
     async loadSessions() {
         try {
             this.loading = true;
-            this.sessions = await cheatingDaddy.storage.getAllSessions();
+            this.sessions = await workflowDaddy.storage.getAllSessions();
         } catch (error) {
             console.error('Error loading conversation sessions:', error);
             this.sessions = [];
@@ -388,7 +414,7 @@ export class HistoryView extends LitElement {
 
     async loadSelectedSession(sessionId) {
         try {
-            const session = await cheatingDaddy.storage.getSession(sessionId);
+            const session = await workflowDaddy.storage.getSession(sessionId);
             if (session) {
                 this.selectedSession = session;
                 this.requestUpdate();
@@ -453,14 +479,15 @@ export class HistoryView extends LitElement {
         this.activeTab = tab;
     }
 
+    _handlePreviewDocs() {
+        // Get the profile from the selected session, or default to 'interview'
+        const profile = this.selectedSession?.profile || 'interview';
+        this.onPreview(profile);
+    }
+
     getProfileNames() {
         return {
-            interview: 'Job Interview',
-            sales: 'Sales Call',
-            meeting: 'Business Meeting',
-            presentation: 'Presentation',
-            negotiation: 'Negotiation',
-            exam: 'Exam Assistant',
+            interview: 'Workflow Documentation',
         };
     }
 
@@ -588,18 +615,23 @@ export class HistoryView extends LitElement {
                     </svg>
                     Back to Sessions
                 </button>
-                <div class="legend">
-                    <div class="legend-item">
-                        <div class="legend-dot user"></div>
-                        <span>Them</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot ai"></div>
-                        <span>Suggestion</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-dot screen"></div>
-                        <span>Screen</span>
+                <div class="header-actions">
+                    <button class="preview-docs-button" @click=${() => this._handlePreviewDocs()}>
+                        Preview Docs
+                    </button>
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-dot user"></div>
+                            <span>Them</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot ai"></div>
+                            <span>Suggestion</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-dot screen"></div>
+                            <span>Screen</span>
+                        </div>
                     </div>
                 </div>
             </div>
